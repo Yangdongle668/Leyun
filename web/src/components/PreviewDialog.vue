@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { authedURL } from '@/api'
 import type { FileNode } from '@/api/types'
 import { extOf } from '@/utils/format'
+
+// pdf.js 体积不小，按需加载：不看 PDF 的人不必为它付首屏代价。
+const PdfViewer = defineAsyncComponent(() => import('@/components/PdfViewer.vue'))
 
 const props = defineProps<{
   modelValue: boolean
@@ -11,8 +14,12 @@ const props = defineProps<{
   /** 分享页预览走另一套无需登录的地址。 */
   shareCode?: string
   sharePassword?: string
+  /** 无下载权限时，PDF 阅读器不提供下载、打印与文字复制。 */
+  canDownload?: boolean
+  /** 有编辑权且启用了 ONLYOFFICE 时，PDF 阅读器里给出转编辑器的入口。 */
+  canEditPdf?: boolean
 }>()
-const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean]; 'edit-pdf': [FileNode] }>()
 
 const visible = computed({
   get: () => props.modelValue,
@@ -86,11 +93,28 @@ watch(
       </div>
     </template>
 
-    <div class="ly-preview-body">
+    <!--
+      PDF 自己管滚动。外层再套一个滚动容器会形成嵌套滚动：
+      scrollIntoView 可能滚的是外层，翻页就失灵了。
+    -->
+    <div class="ly-preview-body" :class="{ 'is-pdf': kind === 'pdf' }">
       <img v-if="kind === 'image'" :src="src" :alt="node?.name" class="ly-preview-img" />
       <video v-else-if="kind === 'video'" :src="src" controls class="ly-preview-video" />
       <audio v-else-if="kind === 'audio'" :src="src" controls class="ly-preview-audio" />
-      <iframe v-else-if="kind === 'pdf'" :src="src" class="ly-preview-frame" title="PDF 预览" />
+      <!--
+        PDF 走自带的 PDF.js 阅读器，不用 <iframe> 套浏览器内置阅读器：
+        后者自带下载与打印按钮，会把"可看不可下"的权限设定直接绕过去。
+      -->
+      <PdfViewer
+        v-else-if="kind === 'pdf'"
+        :key="src"
+        :src="src"
+        :file-name="node?.name"
+        :can-download="canDownload"
+        :can-edit="canEditPdf"
+        class="ly-preview-pdf"
+        @edit="node && emit('edit-pdf', node)"
+      />
       <pre v-else-if="kind === 'text'" v-loading="textLoading" class="ly-preview-text">{{ textContent }}</pre>
       <div v-else class="ly-empty">
         <el-icon :size="40" class="ly-muted"><Document /></el-icon>
@@ -124,6 +148,11 @@ watch(
   background: var(--ly-surface-sunken);
   border-radius: var(--ly-radius);
 }
+.ly-preview-body.is-pdf {
+  overflow: hidden;
+  height: 76vh;
+  align-items: stretch;
+}
 .ly-preview-img {
   max-width: 100%;
   max-height: 74vh;
@@ -138,11 +167,10 @@ watch(
 .ly-preview-audio {
   width: 80%;
 }
-.ly-preview-frame {
+.ly-preview-pdf {
   width: 100%;
-  height: 74vh;
-  border: none;
-  background: #fff;
+  height: 100%;
+  min-height: 0;
 }
 .ly-preview-text {
   width: 100%;

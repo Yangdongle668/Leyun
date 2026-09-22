@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api'
 
@@ -13,7 +13,14 @@ const loading = ref(true)
 const error = ref('')
 const fileName = ref('')
 const mode = ref<'edit' | 'view'>('view')
+const docType = ref('')
 const container = ref<HTMLDivElement>()
+
+const modeLabel = computed(() => {
+  if (mode.value !== 'edit') return '只读预览'
+  // PDF 编辑器的能力和 Office 文档不一样，文案分开说更准确。
+  return docType.value === 'pdf' ? 'PDF 编辑' : '编辑模式'
+})
 
 // ONLYOFFICE 的 api.js 会往 window 上挂 DocsAPI。
 declare global {
@@ -45,6 +52,7 @@ onMounted(async () => {
     const cfg = await api.officeConfig(spaceId, nodeId)
     fileName.value = cfg.file_name
     mode.value = cfg.mode
+    docType.value = cfg.doc_type
     await loadScript(cfg.server_url)
     if (!window.DocsAPI) throw new Error('在线编辑器未正确加载')
 
@@ -87,7 +95,7 @@ function back() {
       </button>
       <span class="ly-office-name">{{ fileName }}</span>
       <span class="ly-tag" :class="mode === 'edit' ? 'ly-tag--primary' : ''">
-        {{ mode === 'edit' ? '编辑模式' : '只读预览' }}
+        {{ modeLabel }}
       </span>
       <span class="ly-spacer"></span>
       <span v-if="mode === 'edit'" class="ly-office-hint">改动会自动保存回乐云</span>

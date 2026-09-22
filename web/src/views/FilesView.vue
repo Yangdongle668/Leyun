@@ -94,8 +94,15 @@ function openNode(node: FileNode) {
     load()
     return
   }
+  // PDF 默认走轻量的内置阅读器：秒开、不依赖 Document Server；
+  // 要改内容或填表单再从阅读器里转到 Office 编辑器。
+  if (node.is_pdf) {
+    previewNode.value = node
+    previewDialog.value = true
+    return
+  }
   if (node.editable && store.officeEnabled) {
-    router.push({ name: 'office', params: { spaceId: String(spaceId.value), nodeId: String(node.id) } })
+    openInOffice(node)
     return
   }
   if (node.previewable) {
@@ -105,6 +112,16 @@ function openNode(node: FileNode) {
   }
   download(node)
 }
+
+function openInOffice(node: FileNode) {
+  router.push({ name: 'office', params: { spaceId: String(spaceId.value), nodeId: String(node.id) } })
+}
+
+/** 当前预览的文件能否转去 Office 编辑（PDF 编辑需要 ONLYOFFICE 8.1+）。 */
+const previewCanEditPdf = computed(
+  () => !!previewNode.value?.is_pdf && store.pdfEditEnabled && !!previewNode.value?.perms.includes('edit'),
+)
+const previewCanDownload = computed(() => !!previewNode.value?.perms.includes('download'))
 
 function goCrumb(id: number) {
   parentId.value = id
@@ -204,7 +221,11 @@ function onRowCommand(cmd: string, node: FileNode) {
       removeNodes([node])
       break
     case 'office':
-      router.push({ name: 'office', params: { spaceId: String(spaceId.value), nodeId: String(node.id) } })
+      openInOffice(node)
+      break
+    case 'preview':
+      previewNode.value = node
+      previewDialog.value = true
       break
   }
 }
@@ -429,7 +450,10 @@ function clearTasks() {
                 <span class="ly-file-name">{{ row.name }}</span>
                 <span v-if="row.creator_name" class="ly-file-sub">{{ row.creator_name }}</span>
               </div>
-              <span v-if="row.editable" class="ly-tag ly-tag--primary">可在线编辑</span>
+              <span v-if="row.is_pdf" class="ly-tag">PDF</span>
+              <span v-else-if="row.editable && store.officeEnabled" class="ly-tag ly-tag--primary">
+                可在线编辑
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -469,7 +493,16 @@ function clearTasks() {
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="row.editable && store.officeEnabled" command="office">
+                  <el-dropdown-item v-if="row.is_pdf" command="preview">
+                    <el-icon><View /></el-icon> 预览
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="
+                      row.perms.includes('edit') &&
+                      (row.is_pdf ? store.pdfEditEnabled : row.editable && store.officeEnabled)
+                    "
+                    command="office"
+                  >
                     <el-icon><EditPen /></el-icon> 在线编辑
                   </el-dropdown-item>
                   <el-dropdown-item v-if="row.perms.includes('edit')" command="rename">
@@ -519,7 +552,19 @@ function clearTasks() {
       :node-ids="selectedIds"
       @done="load"
     />
-    <PreviewDialog v-model="previewDialog" :space-id="spaceId" :node="previewNode" />
+    <PreviewDialog
+      v-model="previewDialog"
+      :space-id="spaceId"
+      :node="previewNode"
+      :can-download="previewCanDownload"
+      :can-edit-pdf="previewCanEditPdf"
+      @edit-pdf="
+        (n) => {
+          previewDialog = false
+          openInOffice(n)
+        }
+      "
+    />
   </div>
 </template>
 

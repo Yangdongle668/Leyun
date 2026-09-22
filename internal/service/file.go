@@ -43,6 +43,9 @@ type NodeView struct {
 	Editable bool `json:"editable"`
 	// Previewable 标记浏览器可直接预览（图片/视频/PDF/文本）。
 	Previewable bool `json:"previewable"`
+	// IsPDF 标记走 PDF 链路：默认用内置 PDF.js 阅读器打开，
+	// 需要改内容或填表单时再转到 ONLYOFFICE 的 PDF 编辑器。
+	IsPDF bool `json:"is_pdf"`
 }
 
 // Crumb 是面包屑的一节。
@@ -186,6 +189,7 @@ func (s *FileService) toView(n model.Node, perm model.Permission, creator string
 		CreatorName: creator,
 		Editable:    !n.IsDir && IsOfficeDocument(n.Name),
 		Previewable: !n.IsDir && IsBrowserPreviewable(n.MimeType, n.Ext),
+		IsPDF:       !n.IsDir && IsPDFLike(n.Name),
 	}
 }
 

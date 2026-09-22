@@ -32,6 +32,8 @@ services:
       # 文档服务器回调乐云同样走容器网络。
       LEYUN_OFFICE_CALLBACK_BASE: http://leyun:8080
       LEYUN_OFFICE_JWT_SECRET: ${LEYUN_OFFICE_JWT_SECRET}
+      # PDF 在线编辑需要 Document Server 8.1+，下面固定的是 8.2。
+      LEYUN_OFFICE_PDF_EDIT: ${LEYUN_OFFICE_PDF_EDIT:-true}
     depends_on:
       - onlyoffice
     networks:

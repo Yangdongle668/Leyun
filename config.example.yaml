@@ -70,6 +70,11 @@ office:
   callback_base: ""
   # 必须与 Document Server 的 JWT_SECRET 一致
   jwt_secret: ""
+  # PDF 在线编辑（改文字、加批注、填表单），需要 Document Server 8.1 及以上。
+  # 本项目的 compose 固定 8.2，保持 true 即可；
+  # 若对接的是更老的 Document Server，改成 false 退回旧式只读预览。
+  # 注意：浏览器内置的 PDF 阅读器不依赖 Document Server，此项不影响它。
+  pdf_edit: true
   token_ttl: 12h
   lang: zh-CN
 

@@ -68,7 +68,9 @@ func (h *Handler) Profile(c *gin.Context) {
 		"is_super_admin":      subj.IsSuperAdmin(),
 		"must_reset_password": subj.User.MustChangePassword,
 		"office_enabled":      h.svc.Office.Enabled(),
-		"settings":            h.svc.Setting.Public(),
+		// PDF 的内置阅读器不依赖 Document Server，但"在线编辑 PDF"依赖它。
+		"pdf_edit_enabled": h.svc.Office.PDFEditEnabled(),
+		"settings":         h.svc.Setting.Public(),
 	})
 }
 

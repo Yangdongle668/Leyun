@@ -27,7 +27,10 @@ const (
 	ScopeOfficeWrite = "office.write"
 )
 
-// officeDocTypes 把扩展名映射到 ONLYOFFICE 的三类编辑器。
+// officeDocTypes 把扩展名映射到 ONLYOFFICE 的四类编辑器。
+//
+// pdf 这一类（含 djvu/xps）需要 Document Server 8.1 及以上；
+// 更老的版本不认识 documentType=pdf，见 OfficeConfig.PDFEdit 的说明。
 var officeDocTypes = map[string]string{
 	"doc": "word", "docx": "word", "docm": "word", "dot": "word", "dotx": "word",
 	"odt": "word", "ott": "word", "rtf": "word", "txt": "word", "fodt": "word",
@@ -35,14 +38,19 @@ var officeDocTypes = map[string]string{
 	"ods": "cell", "ots": "cell", "csv": "cell", "fods": "cell",
 	"ppt": "slide", "pptx": "slide", "pptm": "slide", "pot": "slide", "potx": "slide",
 	"odp": "slide", "otp": "slide", "fodp": "slide",
+	"pdf": "pdf", "djvu": "pdf", "xps": "pdf", "oxps": "pdf",
 }
 
 // officeEditableExts 是能够直接保存回原格式的扩展名。
-// 其余格式（doc/xls/ppt 等旧二进制格式与 csv/txt）只提供只读预览，避免转存时丢格式。
+//
+// 其余格式（doc/xls/ppt 等旧二进制格式）只提供只读预览，避免转存时丢格式。
+// pdf 在 Document Server 8.1 起支持改文字、加批注、填表单并原样存回。
+// djvu/xps 只能看，ONLYOFFICE 没有对应的写回能力。
 var officeEditableExts = map[string]bool{
 	"docx": true, "xlsx": true, "pptx": true,
 	"odt": true, "ods": true, "odp": true,
 	"txt": true, "csv": true,
+	"pdf": true,
 }
 
 // IsOfficeDocument 判断该文件能否用在线 Office 打开（含只读预览）。
@@ -50,6 +58,12 @@ func IsOfficeDocument(name string) bool {
 	ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
 	_, ok := officeDocTypes[ext]
 	return ok
+}
+
+// IsPDFLike 判断该文件是否走 PDF 那条链路（内置阅读器 / ONLYOFFICE 的 PDF 编辑器）。
+func IsPDFLike(name string) bool {
+	ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
+	return officeDocTypes[ext] == "pdf"
 }
 
 // OfficeService 对接 ONLYOFFICE Document Server。
@@ -82,6 +96,8 @@ type EditorConfig struct {
 	// Mode 为 edit 或 view，前端用来决定标题栏提示。
 	Mode     string `json:"mode"`
 	FileName string `json:"file_name"`
+	// DocType 是 ONLYOFFICE 的编辑器类型（word/cell/slide/pdf），供前端区分文案。
+	DocType string `json:"doc_type"`
 }
 
 // BuildConfig 为一个文件生成编辑器配置。
@@ -117,6 +133,13 @@ func (s *OfficeService) BuildConfig(subj *Subject, spaceID, nodeID uint64, callb
 	canEdit := perm.Has(model.PermEdit) && officeEditableExts[ext]
 	canDownload := perm.Has(model.PermDownload)
 
+	isPDF := docType == "pdf"
+	if isPDF && !s.cfg.Office.PDFEdit {
+		// 老版本 Document Server 不认识 documentType=pdf，退回到旧式只读预览。
+		docType = "word"
+		canEdit = false
+	}
+
 	base := s.callbackBase(callbackBase)
 	readToken, err := s.jwt.IssueResource(node.ID, subj.User.ID, ScopeOfficeRead, s.cfg.Office.TokenTTL)
 	if err != nil {
@@ -146,6 +169,11 @@ func (s *OfficeService) BuildConfig(subj *Subject, spaceID, nodeID uint64, callb
 			"modifyFilter":         canEdit,
 			"modifyContentControl": canEdit,
 		},
+	}
+	if isPDF {
+		// PDF 表单填写是比"改内容"更轻的一档：有编辑权才给，
+		// 但不像 Office 文档那样受 officeEditableExts 约束。
+		doc["permissions"].(map[string]any)["fillForms"] = perm.Has(model.PermEdit)
 	}
 
 	editorCfg := map[string]any{
@@ -199,7 +227,13 @@ func (s *OfficeService) BuildConfig(subj *Subject, spaceID, nodeID uint64, callb
 		Config:    cfg,
 		Mode:      modeOf(canEdit),
 		FileName:  node.Name,
+		DocType:   docType,
 	}, nil
+}
+
+// PDFEditEnabled 返回是否可以用 ONLYOFFICE 编辑 PDF。
+func (s *OfficeService) PDFEditEnabled() bool {
+	return s.cfg.Office.Enabled && s.cfg.Office.PDFEdit
 }
 
 func modeOf(canEdit bool) string {

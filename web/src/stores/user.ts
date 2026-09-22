@@ -8,6 +8,8 @@ interface State {
   permissions: PermissionOption[]
   settings: Record<string, string>
   officeEnabled: boolean
+  /** PDF 的内置阅读器不依赖 Document Server，但"在线编辑 PDF"依赖它。 */
+  pdfEditEnabled: boolean
   loaded: boolean
 }
 
@@ -18,6 +20,7 @@ export const useUserStore = defineStore('user', {
     permissions: [],
     settings: {},
     officeEnabled: false,
+    pdfEditEnabled: false,
     loaded: false,
   }),
 
@@ -55,6 +58,7 @@ export const useUserStore = defineStore('user', {
       this.permissions = profile.permissions
       this.settings = profile.settings || {}
       this.officeEnabled = profile.office_enabled
+      this.pdfEditEnabled = profile.pdf_edit_enabled
       this.loaded = true
       return profile
     },

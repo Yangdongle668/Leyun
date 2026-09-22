@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api, ApiError } from '@/api'
 import type { FileNode } from '@/api/types'
-import { humanSize, relativeTime } from '@/utils/format'
+import { extOf, humanSize, relativeTime } from '@/utils/format'
 import FileIcon from '@/components/FileIcon.vue'
 import PreviewDialog from '@/components/PreviewDialog.vue'
+import PdfViewer from '@/components/PdfViewer.vue'
 
 const route = useRoute()
 const code = String(route.params.code)
@@ -72,6 +73,17 @@ function goDownload(nodeId?: number) {
 }
 
 const canDownload = () => !!info.value?.share.perms.includes('download')
+
+/** 分享的是单个 PDF 时，直接在页面里铺开看，不用再点一次。 */
+const isPdf = computed(
+  () => !!info.value && !info.value.node.is_dir && extOf(info.value.node.name) === 'pdf',
+)
+
+const previewSrc = computed(() => {
+  const url = new URL(`/api/v1/share/${code}/preview`, window.location.origin)
+  if (password.value) url.searchParams.set('password', password.value)
+  return url.toString()
+})
 
 function openNode(node: FileNode) {
   if (node.is_dir) {
@@ -191,18 +203,25 @@ function openNode(node: FileNode) {
           </el-table>
         </template>
 
+        <!-- 单文件分享：PDF 直接铺开看，不用再点一次 -->
+        <div v-else-if="isPdf" class="ly-share-pdf">
+          <PdfViewer :src="previewSrc" :file-name="info.node.name" :can-download="canDownload()" />
+        </div>
+
         <div v-else-if="!canDownload()" class="ly-share-note">
           分享者仅开放了在线查看，未授予下载权限。
         </div>
       </div>
     </main>
 
+    <!-- 分享里的 PDF 同样受分享权限管控：只给查看时，阅读器不提供下载与打印 -->
     <PreviewDialog
       v-model="previewDialog"
       :space-id="0"
       :node="previewNode"
       :share-code="code"
       :share-password="password"
+      :can-download="canDownload()"
     />
   </div>
 </template>
@@ -311,6 +330,11 @@ function openNode(node: FileNode) {
 }
 .ly-share-row:hover > span {
   color: var(--ly-primary);
+}
+
+.ly-share-pdf {
+  height: 74vh;
+  min-height: 420px;
 }
 
 .ly-share-note {

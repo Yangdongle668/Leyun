@@ -37,6 +37,14 @@ type OfficeConfig struct {
 	CallbackBase string `yaml:"callback_base"`
 	// JWTSecret 必须与 Document Server 的 JWT_SECRET 一致；为空表示不启用签名校验。
 	JWTSecret string `yaml:"jwt_secret"`
+	// PDFEdit 控制 PDF 走哪条路：
+	//
+	//   true  —— documentType=pdf，按 ACL 决定能否编辑（改文字、批注、填表单）。
+	//            需要 Document Server 8.1 及以上，本项目的 compose 固定 8.2。
+	//   false —— documentType=word 的旧式只读预览，兼容 8.1 之前的 Document Server。
+	//
+	// 无论取值如何，浏览器内置的 PDF.js 阅读器都照常可用，不依赖 Document Server。
+	PDFEdit bool `yaml:"pdf_edit"`
 	// TokenTTL 是下发给 Document Server 的一次性资源令牌有效期。
 	TokenTTL time.Duration `yaml:"token_ttl"`
 	Lang     string        `yaml:"lang"`
@@ -154,6 +162,7 @@ func Default() *Config {
 		},
 		Office: OfficeConfig{
 			Enabled:  false,
+			PDFEdit:  true,
 			TokenTTL: 12 * time.Hour,
 			Lang:     "zh-CN",
 		},
@@ -202,6 +211,7 @@ func (c *Config) applyEnv() {
 	setString(&c.Office.CallbackBase, "LEYUN_OFFICE_CALLBACK_BASE")
 	setString(&c.Office.JWTSecret, "LEYUN_OFFICE_JWT_SECRET")
 	setBool(&c.Office.Enabled, "LEYUN_OFFICE_ENABLED")
+	setBool(&c.Office.PDFEdit, "LEYUN_OFFICE_PDF_EDIT")
 	if v := os.Getenv("LEYUN_ALLOW_ORIGINS"); v != "" {
 		c.Server.AllowOrigins = splitAndTrim(v)
 	}

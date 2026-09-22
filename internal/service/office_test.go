@@ -23,12 +23,12 @@ func TestIsOfficeDocument(t *testing.T) {
 
 func TestOfficeEditableFormats(t *testing.T) {
 	// 能原样存回去的才开放编辑；旧二进制格式转存会丢格式，只给只读预览。
-	for _, ext := range []string{"docx", "xlsx", "pptx", "odt", "ods", "odp"} {
+	for _, ext := range []string{"docx", "xlsx", "pptx", "odt", "ods", "odp", "pdf"} {
 		if !officeEditableExts[ext] {
 			t.Errorf("%s 应当可编辑", ext)
 		}
 	}
-	for _, ext := range []string{"doc", "xls", "ppt", "rtf"} {
+	for _, ext := range []string{"doc", "xls", "ppt", "rtf", "djvu", "xps"} {
 		if officeEditableExts[ext] {
 			t.Errorf("%s 只应提供只读预览", ext)
 		}
@@ -40,11 +40,60 @@ func TestOfficeDocumentTypeMapping(t *testing.T) {
 		"docx": "word", "odt": "word", "txt": "word",
 		"xlsx": "cell", "csv": "cell", "ods": "cell",
 		"pptx": "slide", "odp": "slide",
+		"pdf": "pdf", "djvu": "pdf", "xps": "pdf", "oxps": "pdf",
 	}
 	for ext, want := range cases {
 		if got := officeDocTypes[ext]; got != want {
 			t.Errorf("%s 应映射到 %s，实际 %s", ext, want, got)
 		}
+	}
+}
+
+func TestIsPDFLike(t *testing.T) {
+	// 这些走 PDF 链路：默认用内置阅读器打开，要改内容才转 ONLYOFFICE。
+	for _, name := range []string{"说明书.pdf", "扫描件.PDF", "古籍.djvu", "打印稿.xps"} {
+		if !IsPDFLike(name) {
+			t.Errorf("%s 应当走 PDF 链路", name)
+		}
+	}
+	for _, name := range []string{"方案.docx", "报表.xlsx", "图片.png", "无扩展名"} {
+		if IsPDFLike(name) {
+			t.Errorf("%s 不应走 PDF 链路", name)
+		}
+	}
+	// PDF 同时也算"能用在线 Office 打开"，编辑入口才会出现。
+	if !IsOfficeDocument("说明书.pdf") {
+		t.Errorf("PDF 也应能用在线 Office 打开")
+	}
+}
+
+func TestPDFEditToggle(t *testing.T) {
+	cfg := config.Default()
+	cfg.Office.Enabled = true
+	cfg.Office.PDFEdit = true
+	svc := &OfficeService{cfg: cfg}
+	if !svc.PDFEditEnabled() {
+		t.Errorf("开启后应当允许 PDF 在线编辑")
+	}
+
+	// 关掉开关是给 8.1 之前的 Document Server 留的退路。
+	cfg.Office.PDFEdit = false
+	if svc.PDFEditEnabled() {
+		t.Errorf("关闭后不应允许 PDF 在线编辑")
+	}
+
+	// Office 整体没开时，PDF 编辑当然也不可用（内置阅读器不受影响）。
+	cfg.Office.Enabled = false
+	cfg.Office.PDFEdit = true
+	if svc.PDFEditEnabled() {
+		t.Errorf("未启用 Office 时不应允许 PDF 在线编辑")
+	}
+}
+
+func TestPDFEditDefaultsOn(t *testing.T) {
+	// compose 固定的 ONLYOFFICE 8.2 支持 PDF 编辑，默认就该开着。
+	if !config.Default().Office.PDFEdit {
+		t.Errorf("PDF 在线编辑应当默认开启")
 	}
 }
 

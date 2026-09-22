@@ -93,6 +93,8 @@ export interface FileNode {
   creator_name?: string
   editable: boolean
   previewable: boolean
+  /** 走 PDF 链路：默认用内置阅读器打开，需要改内容时再转 Office 编辑器。 */
+  is_pdf: boolean
 }
 
 export interface Crumb {
@@ -217,6 +219,7 @@ export interface Profile {
   is_super_admin: boolean
   must_reset_password: boolean
   office_enabled: boolean
+  pdf_edit_enabled: boolean
   settings: Record<string, string>
 }
 
@@ -225,4 +228,6 @@ export interface OfficeEditorConfig {
   config: Record<string, unknown>
   mode: 'edit' | 'view'
   file_name: string
+  /** ONLYOFFICE 的编辑器类型：word / cell / slide / pdf。 */
+  doc_type: string
 }
