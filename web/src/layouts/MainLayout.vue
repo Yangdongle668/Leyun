@@ -328,13 +328,18 @@ function onCommand(cmd: string) {
 }
 
 /* ---------- 侧栏 ---------- */
+/*
+ * 浅色侧栏：整屏保持连续的浅色，靠一条分隔线区分主次。
+ * 深色侧栏是传统后台的标志，放在以浏览文件为主的产品里显得笨重。
+ */
 .ly-sidebar {
   width: var(--ly-sidebar-width);
   flex-shrink: 0;
   background: var(--ly-sidebar-bg);
+  border-right: 1px solid var(--ly-sidebar-border);
   display: flex;
   flex-direction: column;
-  transition: width 0.2s ease;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 .ly-sidebar.is-collapsed {
@@ -345,75 +350,93 @@ function onCommand(cmd: string) {
   height: var(--ly-header-height);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 18px;
+  gap: var(--ly-space-3);
+  padding: 0 var(--ly-space-4);
   cursor: pointer;
   flex-shrink: 0;
 }
 .ly-brand-mark {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--ly-radius-sm);
   background: var(--ly-primary);
   color: #fff;
-  font-size: 15px;
+  font-size: var(--ly-font-md);
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(37, 99, 240, 0.28);
 }
 .ly-brand-text {
-  color: #fff;
-  font-size: 15px;
+  color: var(--ly-text);
+  font-size: var(--ly-font-md);
   font-weight: 600;
-  letter-spacing: 0.4px;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
 .ly-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 10px 16px;
-}
-.ly-nav::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  overflow-x: hidden;
+  padding: var(--ly-space-2) var(--ly-space-3) var(--ly-space-4);
 }
 
+/* 分组标题：只做轻声提示，不要喧宾夺主 */
 .ly-nav-label {
-  padding: 14px 10px 6px;
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: #5c6679;
-  text-transform: uppercase;
+  padding: var(--ly-space-4) var(--ly-space-3) var(--ly-space-2);
+  font-size: var(--ly-font-xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ly-sidebar-label);
+  white-space: nowrap;
 }
 
 .ly-nav-item {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--ly-space-3);
   height: 38px;
-  padding: 0 10px;
+  padding: 0 var(--ly-space-3);
   margin-bottom: 2px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ly-radius-sm);
   background: transparent;
   color: var(--ly-sidebar-text);
-  font-size: 14px;
+  font-size: var(--ly-font-base);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition: background-color 0.15s, color 0.15s;
+}
+.ly-nav-item :deep(.el-icon) {
+  font-size: 17px;
+  flex-shrink: 0;
+  /* 图标比文字略浅，让文字成为主角 */
+  color: var(--ly-text-tertiary);
+  transition: color 0.15s;
 }
 .ly-nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+  background: var(--ly-sidebar-hover-bg);
+  color: var(--ly-text);
+}
+.ly-nav-item:hover :deep(.el-icon) {
+  color: var(--ly-text-secondary);
 }
 .ly-nav-item.is-active {
   background: var(--ly-sidebar-active-bg);
   color: var(--ly-sidebar-text-active);
   font-weight: 500;
+}
+.ly-nav-item.is-active :deep(.el-icon) {
+  color: var(--ly-primary);
+}
+.ly-nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--ly-focus-ring);
 }
 .ly-nav-text {
   overflow: hidden;
@@ -421,39 +444,61 @@ function onCommand(cmd: string) {
   white-space: nowrap;
 }
 
-.ly-nav-divider {
+/* 折叠态：图标居中，文字不再占位 */
+.ly-sidebar.is-collapsed .ly-nav-item {
+  justify-content: center;
+  padding: 0;
+}
+.ly-sidebar.is-collapsed .ly-brand {
+  justify-content: center;
+  padding: 0;
+}
+.ly-sidebar.is-collapsed .ly-nav-label {
+  /* 折叠后分组标题只留一条细线，免得留下一行孤零零的省略号 */
   height: 1px;
-  margin: 12px 10px;
-  background: rgba(255, 255, 255, 0.07);
+  padding: 0;
+  margin: var(--ly-space-3) var(--ly-space-3);
+  overflow: hidden;
+  background: var(--ly-border);
 }
 
+.ly-nav-divider {
+  height: 1px;
+  margin: var(--ly-space-3);
+  background: var(--ly-border);
+}
+
+/* ---------- 底部配额 ---------- */
 .ly-quota {
-  padding: 14px 18px 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: var(--ly-space-4);
+  border-top: 1px solid var(--ly-border);
   flex-shrink: 0;
 }
 .ly-quota-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 12px;
-  color: #7b8699;
-  margin-bottom: 8px;
+  gap: var(--ly-space-2);
+  font-size: var(--ly-font-xs);
+  color: var(--ly-text-tertiary);
+  margin-bottom: var(--ly-space-2);
 }
 .ly-quota-num {
-  font-size: 11px;
-  color: #98a3b6;
+  font-size: var(--ly-font-xs);
+  color: var(--ly-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .ly-quota-bar {
-  height: 4px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 5px;
+  border-radius: var(--ly-radius-full);
+  background: var(--ly-border);
   overflow: hidden;
 }
 .ly-quota-fill {
   height: 100%;
   background: var(--ly-primary);
-  border-radius: 4px;
+  border-radius: var(--ly-radius-full);
   transition: width 0.3s ease;
 }
 .ly-quota-fill.is-warn {
@@ -473,16 +518,17 @@ function onCommand(cmd: string) {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px 0 12px;
+  gap: var(--ly-space-3);
+  padding: 0 var(--ly-space-5) 0 var(--ly-space-3);
   background: var(--ly-surface);
   border-bottom: 1px solid var(--ly-border);
 }
 
 .ly-header-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--ly-font-md);
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--ly-text);
 }
 
@@ -493,73 +539,91 @@ function onCommand(cmd: string) {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ly-radius-sm);
   background: transparent;
-  color: var(--ly-text-secondary);
+  color: var(--ly-text-tertiary);
   cursor: pointer;
-  font-size: 17px;
+  font-size: 18px;
+  transition: background-color 0.15s, color 0.15s;
 }
 .ly-icon-btn:hover {
-  background: var(--ly-surface-sunken);
+  background: var(--ly-surface-hover);
   color: var(--ly-text);
+}
+.ly-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ly-focus-ring);
 }
 
 .ly-user {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--ly-space-2);
   height: 40px;
-  padding: 0 10px 0 6px;
+  padding: 0 var(--ly-space-2) 0 var(--ly-space-1);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ly-radius);
   background: transparent;
   cursor: pointer;
   font-family: inherit;
+  transition: background-color 0.15s;
 }
 .ly-user:hover {
-  background: var(--ly-surface-sunken);
+  background: var(--ly-surface-hover);
+}
+.ly-user:focus-visible {
+  outline: none;
+  box-shadow: var(--ly-focus-ring);
 }
 .ly-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--ly-radius-sm);
   background: var(--ly-primary);
   color: #fff;
-  font-size: 13px;
+  font-size: var(--ly-font-sm);
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 .ly-user-meta {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  line-height: 1.25;
+  line-height: 1.3;
+  min-width: 0;
 }
 .ly-user-name {
-  font-size: 13px;
+  font-size: var(--ly-font-sm);
   font-weight: 500;
   color: var(--ly-text);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ly-user-role {
-  font-size: 11px;
+  font-size: var(--ly-font-xs);
   color: var(--ly-text-tertiary);
 }
 
 .ly-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 22px;
-  background: #fff8e8;
-  border-bottom: 1px solid #f6e3bd;
+  gap: var(--ly-space-2);
+  padding: var(--ly-space-2) var(--ly-space-5);
+  background: #fffaf0;
+  border-bottom: 1px solid #f7e6c4;
   color: #9a6b12;
-  font-size: 13px;
+  font-size: var(--ly-font-sm);
 }
 .ly-banner a {
   color: #9a6b12;
   font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .ly-content {
@@ -572,7 +636,8 @@ function onCommand(cmd: string) {
   position: fixed;
   inset: 0;
   z-index: 99;
-  background: rgba(15, 23, 42, 0.38);
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(2px);
 }
 
 @media (max-width: 768px) {
@@ -584,9 +649,13 @@ function onCommand(cmd: string) {
   }
   .ly-sidebar.is-collapsed {
     width: 0;
+    border-right: none;
   }
   .ly-user-meta {
     display: none;
+  }
+  .ly-header {
+    padding-right: var(--ly-space-3);
   }
 }
 </style>

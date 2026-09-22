@@ -107,7 +107,7 @@ async function purgeAll() {
         </el-table-column>
         <el-table-column label="删除时间" width="170">
           <template #default="{ row }">
-            <span class="ly-muted">{{ formatTime(row.trashed_at) }}</span>
+            <span class="ly-muted ly-num">{{ formatTime(row.trashed_at) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="160" align="right">

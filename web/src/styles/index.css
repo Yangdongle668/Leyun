@@ -1,83 +1,139 @@
 /*
  * 乐云设计基线
  *
- * 取向是"简洁大气"：一个克制的主色、大面积留白、几乎看不见的分隔线，
- * 信息靠间距和字重分层，而不是靠边框和色块堆叠。
+ * 取向：简洁、轻盈、克制。信息靠字重、字号和间距分层，
+ * 而不是靠边框、色块和阴影堆叠。
+ *
+ * 改动这里要当心：下面的变量被 25 个页面共用，
+ * 改一个值等于同时改所有页面。
  */
 
 :root {
-  /* 主色：偏冷的企业蓝，沉稳但不灰暗 */
-  --ly-primary: #1f5eff;
-  --ly-primary-hover: #4179ff;
-  --ly-primary-active: #1a4fd8;
-  --ly-primary-soft: #eef3ff;
-  --ly-primary-border: #cfdeff;
+  /* ========== 主色 ========== */
+  /* 偏冷的企业蓝。整套界面只有它一个彩色，其余全是中性灰。 */
+  --ly-primary: #2563f0;
+  --ly-primary-hover: #3f7bff;
+  --ly-primary-active: #1c4fd0;
+  --ly-primary-soft: #eff4ff;
+  --ly-primary-softer: #f7faff;
+  --ly-primary-border: #d3e0ff;
 
   --ly-success: #12b76a;
-  --ly-warning: #f5a524;
-  --ly-danger: #f04438;
-  --ly-info: #8a93a5;
+  --ly-warning: #f59e0b;
+  --ly-danger: #ef4444;
+  --ly-info: #94a3b8;
 
-  /* 中性色阶 */
-  --ly-bg: #f6f8fb;
+  /* ========== 中性色 ========== */
+  /*
+   * 页面底色比纯白略沉，卡片才浮得起来；但又不能太灰，
+   * 否则整屏发脏。这一组值是照着"大面积留白仍然干净"调的。
+   */
+  --ly-bg: #f7f8fa;
   --ly-surface: #ffffff;
-  --ly-surface-sunken: #fafbfd;
-  --ly-border: #e8ecf3;
-  --ly-border-strong: #d9e0ea;
+  --ly-surface-sunken: #f9fafb;
+  --ly-surface-hover: #f4f6f9;
 
-  --ly-text: #1b2333;
-  --ly-text-secondary: #5b6577;
-  --ly-text-tertiary: #98a1b3;
+  /* 分隔线要"几乎看不见"，靠它划分区域而不是强调区域 */
+  --ly-border: #edf0f4;
+  --ly-border-strong: #dfe4ec;
+
+  --ly-text: #1a2233;
+  --ly-text-secondary: #5a6478;
+  --ly-text-tertiary: #949eb0;
+  --ly-text-quaternary: #b6becb;
   --ly-text-inverse: #ffffff;
 
-  /* 侧栏用深色，和大面积浅色内容区拉开层次 */
-  --ly-sidebar-bg: #141a26;
-  --ly-sidebar-text: #aab4c5;
-  --ly-sidebar-text-active: #ffffff;
-  --ly-sidebar-active-bg: rgba(31, 94, 255, 0.16);
+  /* ========== 侧栏 ========== */
+  /*
+   * 浅色侧栏。深色侧栏是传统后台的标志，放在一个以浏览文件为主的
+   * 产品里会显得笨重——整屏应该是连续的浅色，靠一条分隔线区分主次。
+   */
+  --ly-sidebar-bg: #fbfcfd;
+  --ly-sidebar-border: #eef1f5;
+  --ly-sidebar-text: #5a6478;
+  --ly-sidebar-text-active: var(--ly-primary);
+  --ly-sidebar-hover-bg: #f1f4f8;
+  --ly-sidebar-active-bg: #eaf1ff;
+  --ly-sidebar-label: #a3abb9;
 
-  --ly-radius-sm: 6px;
+  /* ========== 圆角 ========== */
+  /* 柔和但不夸张。超过 16px 会开始显得"玩具化"。 */
+  --ly-radius-xs: 6px;
+  --ly-radius-sm: 8px;
   --ly-radius: 10px;
-  --ly-radius-lg: 16px;
+  --ly-radius-lg: 14px;
+  --ly-radius-xl: 18px;
+  --ly-radius-full: 999px;
 
+  /* ========== 阴影 ========== */
+  /* 只用于真正浮起来的东西（弹窗、下拉）。卡片一律用边框。 */
   --ly-shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --ly-shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.06);
-  --ly-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
-  --ly-shadow-lg: 0 20px 48px rgba(16, 24, 40, 0.12);
+  --ly-shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.05);
+  --ly-shadow: 0 6px 20px rgba(16, 24, 40, 0.07);
+  --ly-shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.1);
+  --ly-focus-ring: 0 0 0 3px rgba(37, 99, 240, 0.14);
 
-  --ly-header-height: 60px;
-  --ly-sidebar-width: 224px;
+  /* ========== 间距（4 的倍数） ========== */
+  --ly-space-1: 4px;
+  --ly-space-2: 8px;
+  --ly-space-3: 12px;
+  --ly-space-4: 16px;
+  --ly-space-5: 20px;
+  --ly-space-6: 24px;
+  --ly-space-8: 32px;
+  --ly-space-10: 40px;
+
+  /* ========== 字号 ========== */
+  /*
+   * 六级就够用。中文在小字号下笔画会糊，所以最小只到 12px，
+   * 且 12px 一律配次要色而不是主色——灰度不足会看不清。
+   */
+  --ly-font-xs: 12px;
+  --ly-font-sm: 13px;
+  --ly-font-base: 14px;
+  --ly-font-md: 15px;
+  --ly-font-lg: 17px;
+  --ly-font-xl: 20px;
+  --ly-font-2xl: 24px;
+
+  --ly-line-tight: 1.35;
+  --ly-line-base: 1.6;
+  --ly-line-loose: 1.8;
+
+  /* ========== 尺寸 ========== */
+  --ly-header-height: 56px;
+  --ly-sidebar-width: 232px;
   --ly-sidebar-collapsed: 64px;
+  --ly-control-height: 34px;
+  --ly-control-height-lg: 38px;
+  --ly-content-max: 1440px;
+}
 
-  /* 覆盖 Element Plus 的主题变量，让组件库跟着上面的基线走 */
-  --el-color-primary: var(--ly-primary);
-  --el-color-primary-light-3: var(--ly-primary-hover);
-  --el-color-primary-light-5: #7ba2ff;
-  --el-color-primary-light-7: #b3c9ff;
-  --el-color-primary-light-8: #cfdeff;
-  --el-color-primary-light-9: var(--ly-primary-soft);
-  --el-color-primary-dark-2: var(--ly-primary-active);
-  --el-color-success: var(--ly-success);
-  --el-color-warning: var(--ly-warning);
-  --el-color-danger: var(--ly-danger);
-  --el-color-error: var(--ly-danger);
-  --el-color-info: var(--ly-info);
+/*
+ * ========== 字体 ==========
+ *
+ * 刻意不走 Google Fonts：乐云是私有化部署，内网没有外网是常态
+ * （PDF 阅读器的中日韩字符表就是为此打包进二进制的）。
+ * 从 CDN 拉字体在内网必然失败，退化成难看的宋体。
+ *
+ * 全字符集的 Noto Sans SC 单个字重 woff2 就有 8~10MB，
+ * 三个字重打包进去会让二进制接近翻倍，代价不成比例。
+ *
+ * 所以按"优先用本机已装的好字体"来排：
+ *   拉丁与数字 → 系统 UI 字体（各平台自带的都足够好）
+ *   中文       → Noto Sans SC / 鸿蒙 → 苹方 → 雅黑 → 黑体
+ * 装了 Noto 或鸿蒙的机器自动享受，没装的也不会难看。
+ */
+:root {
+  --ly-font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans SC', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei UI', 'Microsoft YaHei', 'Source Han Sans SC', 'Noto Sans CJK SC',
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
 
-  --el-text-color-primary: var(--ly-text);
-  --el-text-color-regular: var(--ly-text-secondary);
-  --el-text-color-secondary: var(--ly-text-tertiary);
-  --el-text-color-placeholder: var(--ly-text-tertiary);
-  --el-border-color: var(--ly-border-strong);
-  --el-border-color-light: var(--ly-border);
-  --el-border-color-lighter: var(--ly-border);
-  --el-fill-color-blank: var(--ly-surface);
-  --el-fill-color-light: var(--ly-surface-sunken);
-  --el-bg-color: var(--ly-surface);
-  --el-bg-color-page: var(--ly-bg);
-  --el-border-radius-base: 8px;
-  --el-border-radius-small: 6px;
-  --el-font-size-base: 14px;
-  --el-box-shadow-light: var(--ly-shadow-sm);
+  --ly-font-mono:
+    ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Consolas,
+    'Liberation Mono', Menlo, monospace;
 }
 
 * {
@@ -95,30 +151,53 @@ body,
 body {
   background: var(--ly-bg);
   color: var(--ly-text);
-  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
+  font-family: var(--ly-font-sans);
+  font-size: var(--ly-font-base);
+  line-height: var(--ly-line-base);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  /*
+   * 中英混排时给中文两侧留一点气口。text-rendering: optimizeLegibility
+   * 在大列表上会拖慢渲染，换成只开连字。
+   */
+  font-feature-settings: 'liga' 1, 'kern' 1;
 }
 
 a {
   color: var(--ly-primary);
   text-decoration: none;
+  transition: color 0.15s;
+}
+a:hover {
+  color: var(--ly-primary-hover);
 }
 
-/* ---------- 滚动条：细、灰、不抢戏 ---------- */
+/*
+ * 数字等宽：文件大小、日期、配额这些竖排在一起时，
+ * 比例数字会让小数点和位数参差不齐，看着像没对齐。
+ */
+.ly-num,
+.ly-size,
+.ly-date,
+.el-table td .ly-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  /* 日期和容量折行会让一行变两行、整列错开，宁可让列自己放宽 */
+  white-space: nowrap;
+}
+
+
+/* ---------- 滚动条：细、浅、不抢戏 ---------- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d3d9e3;
-  border-radius: 8px;
+  background: #dce1e9;
+  border-radius: var(--ly-radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bcc4d1;
+  background: #c5ccd7;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -126,49 +205,62 @@ a {
 
 /* ---------- 通用版式 ---------- */
 .ly-page {
-  padding: 24px 28px 32px;
-  max-width: 1600px;
+  padding: var(--ly-space-6) var(--ly-space-8) var(--ly-space-10);
+  max-width: var(--ly-content-max);
   margin: 0 auto;
 }
 
 .ly-page-head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: var(--ly-space-4);
+  margin-bottom: var(--ly-space-5);
   flex-wrap: wrap;
 }
 
 .ly-page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--ly-font-xl);
   font-weight: 600;
-  letter-spacing: 0.2px;
+  line-height: var(--ly-line-tight);
+  letter-spacing: -0.01em;
   color: var(--ly-text);
 }
 
 .ly-page-desc {
-  margin: 6px 0 0;
-  font-size: 13px;
+  margin: var(--ly-space-2) 0 0;
+  font-size: var(--ly-font-sm);
+  line-height: var(--ly-line-base);
   color: var(--ly-text-tertiary);
+  max-width: 68ch;
+}
+
+/* 分节标题：卡片内部再分层时用 */
+.ly-section-title {
+  margin: 0 0 var(--ly-space-4);
+  font-size: var(--ly-font-md);
+  font-weight: 600;
+  line-height: var(--ly-line-tight);
+  color: var(--ly-text);
 }
 
 .ly-card {
   background: var(--ly-surface);
   border: 1px solid var(--ly-border);
-  border-radius: var(--ly-radius);
-  box-shadow: var(--ly-shadow-xs);
+  border-radius: var(--ly-radius-lg);
+  /* 卡片不投影：一屏里十几张卡片各自带影子，整页会显得脏 */
+  box-shadow: none;
 }
 
 .ly-card-pad {
-  padding: 20px 22px;
+  padding: var(--ly-space-5) var(--ly-space-6);
 }
 
 .ly-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--ly-space-2);
   flex-wrap: wrap;
 }
 
@@ -180,26 +272,44 @@ a {
   color: var(--ly-text-tertiary);
 }
 
-.ly-mono {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 12px;
-}
-
-.ly-empty {
-  padding: 56px 0;
-  text-align: center;
+.ly-hint {
+  margin-top: var(--ly-space-1);
+  font-size: var(--ly-font-xs);
+  line-height: var(--ly-line-base);
   color: var(--ly-text-tertiary);
 }
 
-/* 轻量徽标：用于角色、空间类型、权限码这类短标签 */
+.ly-mono {
+  font-family: var(--ly-font-mono);
+  font-size: var(--ly-font-xs);
+  letter-spacing: -0.01em;
+}
+
+/* 单行省略。长文件名、长路径都靠它。 */
+.ly-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ly-empty {
+  padding: 64px var(--ly-space-4);
+  text-align: center;
+  color: var(--ly-text-tertiary);
+  font-size: var(--ly-font-sm);
+}
+
+/* 轻量徽标：角色、空间类型、权限码这类短标签 */
 .ly-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ly-space-1);
   height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 0 var(--ly-space-2);
+  border-radius: var(--ly-radius-xs);
+  font-size: var(--ly-font-xs);
+  font-weight: 500;
   line-height: 1;
   background: var(--ly-surface-sunken);
   color: var(--ly-text-secondary);
@@ -212,104 +322,406 @@ a {
   border-color: var(--ly-primary-border);
 }
 .ly-tag--warning {
-  background: #fff6e6;
-  color: #b5741a;
-  border-color: #fae3bb;
+  background: #fff8ea;
+  color: #b06f13;
+  border-color: #fbe6c2;
 }
 .ly-tag--danger {
-  background: #fdeceb;
-  color: #c23a30;
-  border-color: #f8ccc8;
+  background: #fef1f1;
+  color: #c93a3a;
+  border-color: #fad2d2;
 }
 .ly-tag--success {
-  background: #e8f8f0;
-  color: #0b8a51;
-  border-color: #c4ecd9;
+  background: #ecfaf3;
+  color: #0a8a52;
+  border-color: #c9ecdb;
 }
 
-/* ---------- Element Plus 细节微调 ---------- */
+/* 统计数字块：概览页、索引进度这类地方 */
+.ly-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ly-space-1);
+}
+.ly-stat span {
+  font-size: var(--ly-font-xs);
+  color: var(--ly-text-tertiary);
+}
+.ly-stat strong {
+  font-size: var(--ly-font-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--ly-text);
+}
+
+/* ===================================================================
+ * Element Plus 统一
+ *
+ * 组件库默认偏"后台系统"：控件偏高、圆角偏小、边框偏重。
+ * 这一段把它拉到和上面的基线一致。放在全局而不是各页面里，
+ * 是因为一处改动要同时覆盖 25 个页面的所有弹窗和表单。
+ * =================================================================== */
+
+:root {
+  --el-color-primary: var(--ly-primary);
+  --el-color-primary-light-3: var(--ly-primary-hover);
+  --el-color-primary-light-5: #85a8ff;
+  --el-color-primary-light-7: #b8ccff;
+  --el-color-primary-light-8: var(--ly-primary-border);
+  --el-color-primary-light-9: var(--ly-primary-soft);
+  --el-color-primary-dark-2: var(--ly-primary-active);
+  --el-color-success: var(--ly-success);
+  --el-color-warning: var(--ly-warning);
+  --el-color-danger: var(--ly-danger);
+  --el-color-error: var(--ly-danger);
+  --el-color-info: var(--ly-info);
+
+  --el-text-color-primary: var(--ly-text);
+  --el-text-color-regular: var(--ly-text-secondary);
+  --el-text-color-secondary: var(--ly-text-tertiary);
+  --el-text-color-placeholder: var(--ly-text-quaternary);
+  --el-border-color: var(--ly-border-strong);
+  --el-border-color-light: var(--ly-border);
+  --el-border-color-lighter: var(--ly-border);
+  --el-border-color-extra-light: var(--ly-border);
+  --el-fill-color-blank: var(--ly-surface);
+  --el-fill-color-light: var(--ly-surface-sunken);
+  --el-fill-color-lighter: var(--ly-surface-sunken);
+  --el-bg-color: var(--ly-surface);
+  --el-bg-color-page: var(--ly-bg);
+  --el-bg-color-overlay: var(--ly-surface);
+
+  --el-border-radius-base: var(--ly-radius-sm);
+  --el-border-radius-small: var(--ly-radius-xs);
+  --el-font-size-base: var(--ly-font-base);
+  --el-font-family: var(--ly-font-sans);
+
+  --el-box-shadow-light: var(--ly-shadow-sm);
+  --el-box-shadow: var(--ly-shadow);
+  --el-component-size: var(--ly-control-height);
+  --el-component-size-small: 28px;
+  --el-component-size-large: var(--ly-control-height-lg);
+}
+
+/* ---------- 按钮 ---------- */
 .el-button {
+  font-family: var(--ly-font-sans);
   font-weight: 500;
+  border-radius: var(--ly-radius-sm);
+  padding: 0 var(--ly-space-4);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.el-button + .el-button {
+  margin-left: var(--ly-space-2);
+}
+/* 次要按钮默认不要边框色太重，避免一排按钮像栅栏 */
+.el-button--default {
+  background: var(--ly-surface);
+  border-color: var(--ly-border-strong);
+  color: var(--ly-text-secondary);
+}
+.el-button--default:hover {
+  background: var(--ly-surface-hover);
+  border-color: var(--ly-border-strong);
+  color: var(--ly-text);
+}
+.el-button--primary {
+  box-shadow: 0 1px 2px rgba(37, 99, 240, 0.2);
+}
+.el-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ly-focus-ring);
+}
+.el-button.is-text {
+  padding: 0 var(--ly-space-2);
+}
+.el-button [class*='el-icon'] + span {
+  margin-left: var(--ly-space-1);
 }
 
+/* ---------- 输入类 ---------- */
+.el-input__wrapper,
+.el-textarea__inner {
+  border-radius: var(--ly-radius-sm);
+  box-shadow: 0 0 0 1px var(--ly-border-strong) inset;
+  transition: box-shadow 0.15s;
+}
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--ly-text-quaternary) inset;
+}
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--ly-primary) inset, var(--ly-focus-ring);
+}
+.el-input__inner,
+.el-textarea__inner {
+  font-family: var(--ly-font-sans);
+}
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: var(--ly-text-quaternary);
+}
+.el-select__wrapper {
+  border-radius: var(--ly-radius-sm);
+}
+
+/* ---------- 表格 ---------- */
 .el-table {
   --el-table-border-color: var(--ly-border);
-  --el-table-header-bg-color: var(--ly-surface-sunken);
-  --el-table-header-text-color: var(--ly-text-secondary);
-  --el-table-row-hover-bg-color: var(--ly-primary-soft);
+  --el-table-header-bg-color: transparent;
+  --el-table-header-text-color: var(--ly-text-tertiary);
+  --el-table-row-hover-bg-color: var(--ly-surface-hover);
+  --el-table-current-row-bg-color: var(--ly-primary-soft);
+  font-size: var(--ly-font-base);
 }
-
+.el-table::before {
+  /* 组件库在表格底部画的那条实线，和卡片边框重叠成双线 */
+  display: none;
+}
 .el-table th.el-table__cell {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--ly-font-xs);
+  letter-spacing: 0.02em;
+  background: transparent;
+  border-bottom: 1px solid var(--ly-border);
 }
-
 .el-table .el-table__cell {
-  padding: 10px 0;
+  padding: var(--ly-space-3) 0;
+  border-bottom: 1px solid var(--ly-border);
+}
+.el-table .el-table__row:last-child .el-table__cell {
+  border-bottom: none;
+}
+/* 选中行：浅色底 + 左侧主色细条，不破坏内容对齐 */
+.el-table__body tr.current-row > td.el-table__cell,
+.el-table__body tr.el-table__row.selected > td.el-table__cell {
+  background: var(--ly-primary-soft);
 }
 
+/* ---------- 弹窗 ---------- */
 .el-dialog {
-  border-radius: var(--ly-radius-lg);
+  border-radius: var(--ly-radius-xl);
+  box-shadow: var(--ly-shadow-lg);
   overflow: hidden;
 }
-
 .el-dialog__header {
   margin-right: 0;
-  padding: 20px 24px 12px;
+  padding: var(--ly-space-6) var(--ly-space-6) var(--ly-space-3);
+}
+.el-dialog__title {
+  font-size: var(--ly-font-lg);
   font-weight: 600;
-}
-
-.el-dialog__body {
-  padding: 8px 24px 20px;
-}
-
-.el-dialog__footer {
-  padding: 8px 24px 20px;
-}
-
-.el-drawer__header {
-  margin-bottom: 0;
-  padding: 18px 22px;
-  border-bottom: 1px solid var(--ly-border);
+  line-height: var(--ly-line-tight);
   color: var(--ly-text);
-  font-weight: 600;
 }
-
-.el-drawer__body {
-  padding: 18px 22px;
+.el-dialog__body {
+  padding: var(--ly-space-2) var(--ly-space-6) var(--ly-space-5);
+  color: var(--ly-text-secondary);
+}
+.el-dialog__footer {
+  padding: var(--ly-space-3) var(--ly-space-6) var(--ly-space-6);
+}
+.el-dialog__headerbtn {
+  top: var(--ly-space-5);
+  right: var(--ly-space-5);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ly-radius-xs);
+}
+.el-dialog__headerbtn:hover {
+  background: var(--ly-surface-hover);
+}
+.el-overlay-dialog .el-overlay {
+  backdrop-filter: blur(2px);
 }
 
 .el-message-box {
-  border-radius: var(--ly-radius);
+  border-radius: var(--ly-radius-lg);
+  padding: var(--ly-space-6);
+}
+.el-message-box__title {
+  font-size: var(--ly-font-md);
+  font-weight: 600;
+}
+.el-message-box__content {
+  padding: var(--ly-space-3) 0 var(--ly-space-2);
+  color: var(--ly-text-secondary);
+  line-height: var(--ly-line-base);
 }
 
-.el-card {
+/* ---------- 抽屉 ---------- */
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: var(--ly-space-5) var(--ly-space-6);
+  border-bottom: 1px solid var(--ly-border);
+  color: var(--ly-text);
+  font-size: var(--ly-font-md);
+  font-weight: 600;
+}
+.el-drawer__body {
+  padding: var(--ly-space-5) var(--ly-space-6);
+}
+
+/* ---------- 下拉与菜单 ---------- */
+.el-popper.is-light,
+.el-dropdown__popper,
+.el-select__popper {
   border-radius: var(--ly-radius);
   border-color: var(--ly-border);
+  box-shadow: var(--ly-shadow);
+}
+.el-dropdown-menu {
+  padding: var(--ly-space-1);
+}
+.el-dropdown-menu__item {
+  border-radius: var(--ly-radius-xs);
+  padding: var(--ly-space-2) var(--ly-space-3);
+  font-size: var(--ly-font-sm);
+  line-height: 1.5;
+}
+.el-dropdown-menu__item:not(.is-disabled):hover {
+  background: var(--ly-surface-hover);
+  color: var(--ly-text);
+}
+.el-select-dropdown__item {
+  border-radius: var(--ly-radius-xs);
+  margin: 0 var(--ly-space-1);
+  font-size: var(--ly-font-sm);
+}
+
+/* Tooltip：深色小气泡，别做得像卡片 */
+.el-popper.is-dark {
+  border-radius: var(--ly-radius-xs);
+  padding: 6px 10px;
+  font-size: var(--ly-font-xs);
+  line-height: 1.5;
+  background: #2b3444;
+}
+.el-popper.is-dark .el-popper__arrow::before {
+  background: #2b3444;
+}
+
+/* ---------- 提示条 ---------- */
+.el-message {
+  border-radius: var(--ly-radius);
+  border: 1px solid var(--ly-border);
+  box-shadow: var(--ly-shadow);
+  padding: var(--ly-space-3) var(--ly-space-4);
+  min-width: 260px;
+}
+.el-message__content {
+  font-size: var(--ly-font-sm);
+  color: var(--ly-text);
+}
+.el-notification {
+  border-radius: var(--ly-radius-lg);
+  box-shadow: var(--ly-shadow-lg);
+}
+
+/* ---------- 其它 ---------- */
+.el-card {
+  border-radius: var(--ly-radius-lg);
+  border-color: var(--ly-border);
+  box-shadow: none;
 }
 
 .el-menu {
   border-right: none;
 }
 
+.el-breadcrumb {
+  font-size: var(--ly-font-sm);
+}
 .el-breadcrumb__inner,
 .el-breadcrumb__inner a {
   font-weight: 400;
-  color: var(--ly-text-secondary);
+  color: var(--ly-text-tertiary);
+  transition: color 0.15s;
 }
-
+.el-breadcrumb__inner a:hover {
+  color: var(--ly-primary);
+}
 .el-breadcrumb__item:last-child .el-breadcrumb__inner {
   color: var(--ly-text);
   font-weight: 500;
 }
 
-/* 移动端收窄留白，避免横向滚动 */
+.el-tag {
+  border-radius: var(--ly-radius-xs);
+  font-weight: 500;
+}
+
+.el-progress-bar__outer {
+  border-radius: var(--ly-radius-full);
+  background: var(--ly-border);
+}
+.el-progress-bar__inner {
+  border-radius: var(--ly-radius-full);
+}
+
+.el-form-item__label {
+  font-size: var(--ly-font-sm);
+  color: var(--ly-text-secondary);
+  font-weight: 400;
+}
+
+.el-checkbox__label,
+.el-radio__label {
+  font-size: var(--ly-font-sm);
+}
+
+.el-pagination {
+  font-variant-numeric: tabular-nums;
+}
+
+.el-switch {
+  --el-switch-off-color: #d3d9e3;
+}
+
+/* 键盘操作要看得见落点。鼠标点击不触发（:focus-visible 的意义所在）。 */
+.el-checkbox__input.is-focus .el-checkbox__inner,
+.el-radio__input.is-focus .el-radio__inner,
+.el-switch input:focus-visible + .el-switch__core {
+  box-shadow: var(--ly-focus-ring);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1024px) {
+  .ly-page {
+    padding: var(--ly-space-5) var(--ly-space-5) var(--ly-space-8);
+  }
+}
+
 @media (max-width: 768px) {
   .ly-page {
-    padding: 16px;
+    padding: var(--ly-space-4) var(--ly-space-4) var(--ly-space-6);
   }
   .ly-page-head {
     align-items: flex-start;
     flex-direction: column;
+    gap: var(--ly-space-3);
+  }
+  .ly-page-title {
+    font-size: var(--ly-font-lg);
+  }
+  .ly-card-pad {
+    padding: var(--ly-space-4);
+  }
+  /* 手机上弹窗别贴边 */
+  .el-dialog {
+    width: calc(100vw - 32px) !important;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .el-dialog__header,
+  .el-dialog__body,
+  .el-dialog__footer {
+    padding-left: var(--ly-space-5);
+    padding-right: var(--ly-space-5);
+  }
+  /* 触摸热区：按钮至少 36px 高，低于这个值很难点中 */
+  .el-button {
+    min-height: 36px;
   }
 }

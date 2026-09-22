@@ -48,7 +48,33 @@ const can = (p: PermCode) => parentPerms.value.includes(p)
 const canUpload = computed(() => can('upload'))
 const canManage = computed(() => can('manage'))
 
+/** 把权限码翻成一句人话，供页头展示。 */
+const PERM_TEXT: Record<string, string> = {
+  view: '查看',
+  download: '下载',
+  upload: '上传',
+  edit: '编辑',
+  delete: '删除',
+  share: '分享',
+  manage: '授权',
+}
+const permSummary = computed(() =>
+  parentPerms.value.length
+    ? '可' + parentPerms.value.map((p) => PERM_TEXT[p] ?? p).join('、')
+    : '暂无权限',
+)
+
 const selectedIds = computed(() => selected.value.map((n) => n.id))
+
+/**
+ * 给勾选中的行打个类名。
+ *
+ * 组件库只为"当前行"（单击选中）加 current-row，复选框勾选不加任何标记，
+ * 于是勾中的行和普通行底色一样，全靠左边那个小勾子区分。
+ */
+function rowClass({ row }: { row: FileNode }) {
+  return selectedIds.value.includes(row.id) ? 'is-picked' : ''
+}
 const hasSelection = computed(() => selected.value.length > 0)
 
 async function load() {
@@ -368,27 +394,31 @@ function clearTasks() {
     />
 
     <!-- 头部：空间名 + 权限概览 -->
-    <div class="ly-page-head">
-      <div>
-        <h1 class="ly-page-title">
-          {{ space?.name || '文件' }}
-          <span v-if="space" class="ly-tag" style="margin-left: 8px; vertical-align: middle">
-            {{ spaceTypeLabel(space.type) }}
-          </span>
-        </h1>
-        <p class="ly-page-desc">
-          <template v-if="space">
+    <div class="ly-page-head ly-files-head">
+      <div class="ly-files-ident">
+        <h1 class="ly-page-title ly-ellipsis">{{ space?.name || '文件' }}</h1>
+        <span v-if="space" class="ly-tag">{{ spaceTypeLabel(space.type) }}</span>
+
+        <!-- 容量与权限拆成两行：挤成一行时那串顿号分隔的权限会把容量淹掉 -->
+        <div v-if="space" class="ly-files-meta">
+          <span class="ly-num">
             已用 {{ humanSize(space.used_bytes) }}
             <template v-if="space.quota_bytes"> / {{ humanSize(space.quota_bytes) }}</template>
-            <template v-else> · 不限容量</template>
-            · 你在此处可以：{{ parentPerms.length ? parentPerms.map((p) => ({ view: '查看', download: '下载', upload: '上传', edit: '编辑', delete: '删除', share: '分享', manage: '授权' } as Record<string, string>)[p]).join('、') : '暂无权限' }}
-          </template>
-        </p>
+          </span>
+          <span v-if="!space.quota_bytes">不限容量</span>
+          <span class="ly-files-perms">{{ permSummary }}</span>
+        </div>
       </div>
 
-      <div class="ly-toolbar">
-        <el-button v-if="canUpload" type="primary" :icon="'Upload'" @click="pickFiles">上传文件</el-button>
-        <el-button v-if="canUpload" :icon="'FolderAdd'" @click="pickFolder">上传文件夹</el-button>
+      <!--
+        主次分明：只有"上传文件"是主按钮，其余三个降一级。
+        四个同等权重的按钮排一行，等于没有重点。
+      -->
+      <div class="ly-toolbar ly-files-tools">
+        <el-button v-if="canUpload" type="primary" :icon="'Upload'" @click="pickFiles">
+          上传文件
+        </el-button>
+        <el-button v-if="canUpload" :icon="'FolderOpened'" @click="pickFolder">上传文件夹</el-button>
         <el-button v-if="canUpload" :icon="'FolderAdd'" @click="createFolder">新建目录</el-button>
         <el-button v-if="canManage" :icon="'Key'" @click="openPerm(null)">权限设置</el-button>
       </div>
@@ -438,37 +468,44 @@ function clearTasks() {
         :data="items"
         row-key="id"
         class="ly-files-table"
+        :row-class-name="rowClass"
         @selection-change="(rows: FileNode[]) => (selected = rows)"
         @row-dblclick="openNode"
       >
-        <el-table-column type="selection" width="44" />
-        <el-table-column label="名称" min-width="300">
+        <el-table-column type="selection" width="48" />
+        <el-table-column label="名称" min-width="280">
           <template #default="{ row }">
             <div class="ly-file-row" @click="openNode(row)">
-              <FileIcon :name="row.name" :is-dir="row.is_dir" />
+              <FileIcon :name="row.name" :is-dir="row.is_dir" :size="36" />
               <div class="ly-file-meta">
                 <span class="ly-file-name">{{ row.name }}</span>
                 <span v-if="row.creator_name" class="ly-file-sub">{{ row.creator_name }}</span>
               </div>
-              <span v-if="row.is_pdf" class="ly-tag">PDF</span>
-              <span v-else-if="row.editable && store.officeEnabled" class="ly-tag ly-tag--primary">
+              <span v-if="row.is_pdf" class="ly-tag ly-file-flag">PDF</span>
+              <span
+                v-else-if="row.editable && store.officeEnabled"
+                class="ly-tag ly-tag--primary ly-file-flag"
+              >
                 可在线编辑
               </span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="大小" width="110">
+        <el-table-column label="大小" width="112" align="right">
           <template #default="{ row }">
-            <span :class="{ 'ly-muted': row.is_dir }">{{ row.is_dir ? '—' : row.size_text }}</span>
+            <span class="ly-num" :class="{ 'ly-muted': row.is_dir }">
+              {{ row.is_dir ? '—' : row.size_text }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="修改时间" width="140">
+        <el-table-column label="修改时间" width="148">
           <template #default="{ row }">
-            <span class="ly-muted">{{ relativeTime(row.updated_at) }}</span>
+            <span class="ly-muted ly-num">{{ relativeTime(row.updated_at) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="180" align="right">
           <template #default="{ row }">
+            <div class="ly-row-ops">
             <el-button
               v-if="row.perms.includes('download')"
               link
@@ -517,15 +554,24 @@ function clearTasks() {
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+            </div>
           </template>
         </el-table-column>
 
         <template #empty>
-          <div class="ly-empty">
-            <el-icon :size="42" class="ly-muted"><FolderOpened /></el-icon>
-            <p v-if="keyword">没有匹配「{{ keyword }}」的文件</p>
-            <p v-else-if="canUpload">这里还是空的，拖拽文件到此处即可上传</p>
-            <p v-else>这里还没有内容</p>
+          <div class="ly-files-empty">
+            <div class="ly-files-empty-icon">
+              <el-icon :size="30"><FolderOpened /></el-icon>
+            </div>
+            <p class="ly-files-empty-title">
+              <template v-if="keyword">没有匹配的文件</template>
+              <template v-else>这里还是空的</template>
+            </p>
+            <p class="ly-files-empty-sub">
+              <template v-if="keyword">换个关键词试试，或清空搜索查看全部</template>
+              <template v-else-if="canUpload">把文件拖到这里，或点右上角「上传文件」</template>
+              <template v-else>你在此目录没有可见的内容</template>
+            </p>
           </div>
         </template>
       </el-table>
@@ -574,75 +620,256 @@ function clearTasks() {
   min-height: calc(100vh - var(--ly-header-height));
 }
 
+/* ---------- 页头 ---------- */
+.ly-files-head {
+  align-items: flex-start;
+}
+/*
+ * flex:1 + min-width:0 是关键：容量那行用 flex-basis:100% 占整行，
+ * 不给这里设 flex 的话，整个标题块会撑满宽度、把右侧工具栏挤到下一行。
+ */
+.ly-files-ident {
+  flex: 1 1 320px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ly-space-2) var(--ly-space-3);
+  min-width: 0;
+}
+.ly-files-ident .ly-page-title {
+  max-width: 46ch;
+}
+/* 容量那行独占一整行：和标题挤在一起会被标题的字重压住 */
+.ly-files-meta {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ly-space-2);
+  font-size: var(--ly-font-sm);
+  color: var(--ly-text-tertiary);
+}
+/*
+ * 分隔点用伪元素附在后一项上，而不是单独成为一个 flex 子项。
+ * 独立的点在换行时会被留在上一行末尾，悬着很难看。
+ */
+.ly-files-meta > span + span::before {
+  content: '·';
+  margin-right: var(--ly-space-2);
+  color: var(--ly-text-quaternary);
+}
+.ly-files-perms {
+  min-width: 0;
+}
+.ly-files-tools {
+  flex-shrink: 0;
+}
+
+/* ---------- 面包屑 / 搜索条 ---------- */
 .ly-files-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: var(--ly-space-3);
+  padding: var(--ly-space-3) var(--ly-space-4);
   border-bottom: 1px solid var(--ly-border);
   flex-wrap: wrap;
 }
 
+/* ---------- 批量操作条 ---------- */
 .ly-files-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 16px;
+  gap: var(--ly-space-1);
+  padding: var(--ly-space-2) var(--ly-space-4);
   background: var(--ly-primary-soft);
   border-bottom: 1px solid var(--ly-primary-border);
-  font-size: 13px;
+  font-size: var(--ly-font-sm);
   color: var(--ly-primary);
 }
+.ly-files-actions > span:first-child {
+  margin-right: var(--ly-space-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 
+/* ---------- 列表 ---------- */
 .ly-files-table :deep(.el-table__row) {
   cursor: default;
+}
+/* 勾选行：淡主色底 + 左侧一道主色，悬停时也不会被灰底盖掉 */
+.ly-files-table :deep(.el-table__row.is-picked > td.el-table__cell) {
+  background: var(--ly-primary-soft);
+}
+.ly-files-table :deep(.el-table__row.is-picked:hover > td.el-table__cell) {
+  background: #e6eeff;
+}
+.ly-files-table :deep(.el-table__row.is-picked > td.el-table__cell:first-child) {
+  box-shadow: inset 2px 0 0 var(--ly-primary);
+}
+/* 行高靠内边距撑，不写死 height——文件名换行时行会自己长高 */
+.ly-files-table :deep(.el-table__cell) {
+  padding: var(--ly-space-2) 0;
+}
+.ly-files-table :deep(.el-table__cell:first-child) {
+  padding-left: var(--ly-space-4);
+}
+.ly-files-table :deep(.el-table__cell:last-child) {
+  padding-right: var(--ly-space-4);
+}
+.ly-files-table :deep(.el-table__header th.el-table__cell:first-child) {
+  padding-left: var(--ly-space-4);
+}
+.ly-files-table :deep(.el-table__header th.el-table__cell:last-child) {
+  padding-right: var(--ly-space-4);
 }
 
 .ly-file-row {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--ly-space-3);
   cursor: pointer;
   min-width: 0;
 }
 .ly-file-meta {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
-  line-height: 1.35;
+  gap: 1px;
 }
 .ly-file-name {
-  font-size: 14px;
+  font-size: var(--ly-font-base);
+  line-height: 1.4;
   color: var(--ly-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.15s;
 }
 .ly-file-row:hover .ly-file-name {
   color: var(--ly-primary);
 }
 .ly-file-sub {
-  font-size: 11.5px;
-  color: var(--ly-text-tertiary);
+  font-size: var(--ly-font-xs);
+  line-height: 1.4;
+  color: var(--ly-text-quaternary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 类型标记不参与挤压：文件名再长也不能把它挤没 */
+.ly-file-flag {
+  flex-shrink: 0;
 }
 
+/*
+ * 操作列：常驻但压低存在感，悬停整行才提亮。
+ *
+ * 不用"悬停才显形"那套：操作会凭空消失，键盘和触摸用户找不到，
+ * 为了列表清爽牺牲可发现性不划算。压低灰度已经足够安静。
+ */
+.ly-row-ops {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ly-space-1);
+  justify-content: flex-end;
+}
+.ly-row-ops :deep(.el-button.is-link) {
+  color: var(--ly-text-tertiary);
+  font-weight: 400;
+  padding: 0 var(--ly-space-1);
+  transition: color 0.15s;
+}
+.ly-files-table :deep(.el-table__row:hover) .ly-row-ops .el-button.is-link {
+  color: var(--ly-primary);
+}
+.ly-row-ops :deep(.el-button.is-link:hover),
+.ly-row-ops :deep(.el-button.is-link:focus-visible) {
+  color: var(--ly-primary-hover);
+}
+
+/* ---------- 空状态 ---------- */
+.ly-files-empty {
+  padding: 72px var(--ly-space-4);
+  text-align: center;
+}
+.ly-files-empty-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto var(--ly-space-4);
+  border-radius: var(--ly-radius-lg);
+  background: var(--ly-surface-sunken);
+  color: var(--ly-text-quaternary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ly-files-empty-title {
+  margin: 0 0 var(--ly-space-1);
+  font-size: var(--ly-font-md);
+  font-weight: 500;
+  color: var(--ly-text-secondary);
+  line-height: var(--ly-line-tight);
+}
+.ly-files-empty-sub {
+  margin: 0;
+  font-size: var(--ly-font-sm);
+  color: var(--ly-text-quaternary);
+}
+
+/* ---------- 拖拽提示 ---------- */
 .ly-drop-hint {
   position: absolute;
-  inset: 12px;
+  inset: var(--ly-space-3);
   border: 2px dashed var(--ly-primary);
-  border-radius: var(--ly-radius-lg);
-  background: rgba(31, 94, 255, 0.05);
+  border-radius: var(--ly-radius-xl);
+  background: rgba(37, 99, 240, 0.045);
+  backdrop-filter: blur(1px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: var(--ly-space-3);
   color: var(--ly-primary);
-  font-size: 15px;
+  font-size: var(--ly-font-md);
+  font-weight: 500;
   pointer-events: none;
   z-index: 10;
 }
 .ly-drop-hint p {
   margin: 0;
+}
+
+@media (max-width: 768px) {
+  /*
+   * 页头在手机上是纵向排列的，此时 flex:1 会变成"垂直撑满"，
+   * 把标题、容量、按钮之间拉出大片空白。这里必须关掉。
+   */
+  .ly-files-ident {
+    flex: none;
+    width: 100%;
+  }
+  .ly-files-bar {
+    gap: var(--ly-space-2);
+    padding: var(--ly-space-3);
+  }
+  /* 手机上搜索框独占一行，否则和面包屑挤成一团 */
+  .ly-files-bar :deep(.el-input) {
+    width: 100% !important;
+  }
+  .ly-files-tools {
+    width: 100%;
+    gap: var(--ly-space-2);
+  }
+  /* 不给按钮设 flex:1：四个按钮会排成"三个 + 一个独占整行"，很难看 */
+  .ly-files-tools :deep(.el-button) {
+    margin-left: 0;
+  }
+  .ly-files-table :deep(.el-table__cell:first-child) {
+    padding-left: var(--ly-space-3);
+  }
+  .ly-files-table :deep(.el-table__cell:last-child) {
+    padding-right: var(--ly-space-3);
+  }
 }
 </style>

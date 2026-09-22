@@ -106,7 +106,7 @@ function statusOf(share: Share) {
         </el-table-column>
         <el-table-column label="有效期" width="160">
           <template #default="{ row }">
-            <span class="ly-muted">{{ row.expire_at ? formatTime(row.expire_at, false) : '长期' }}</span>
+            <span class="ly-muted ly-num">{{ row.expire_at ? formatTime(row.expire_at, false) : '长期' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">

@@ -58,9 +58,11 @@ const boxSize = computed(() => props.size ?? 34)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--ly-radius-sm);
   font-weight: 600;
-  letter-spacing: 0.2px;
+  /* 扩展名是全大写的三四个字母，收紧字距才不显松散 */
+  letter-spacing: -0.02em;
+  line-height: 1;
   flex-shrink: 0;
   user-select: none;
 }

@@ -309,7 +309,7 @@ async function removeUser(row: User) {
         </el-table-column>
         <el-table-column label="上次登录" width="150">
           <template #default="{ row }">
-            <span class="ly-muted">{{ formatTime(row.last_login_at, false) }}</span>
+            <span class="ly-muted ly-num">{{ formatTime(row.last_login_at, false) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="88">

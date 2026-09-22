@@ -92,7 +92,7 @@ function reset() {
       <el-table v-loading="loading" :data="list" row-key="id">
         <el-table-column label="时间" width="170">
           <template #default="{ row }">
-            <span class="ly-muted">{{ formatTime(row.created_at) }}</span>
+            <span class="ly-muted ly-num">{{ formatTime(row.created_at) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作人" width="130">
