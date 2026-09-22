@@ -14,15 +14,13 @@ const store = useUserStore()
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)
 const siteName = ref('乐云企业网盘')
-const notice = ref('本系统不开放自助注册，账号由超级管理员统一开通')
 
 onMounted(async () => {
   try {
     const info = await api.siteInfo()
     siteName.value = info.settings.site_name || siteName.value
-    notice.value = info.register_notice || notice.value
   } catch {
-    // 站点信息拿不到不影响登录，沿用默认文案。
+    // 站点信息拿不到不影响登录，沿用默认站名。
   }
 })
 
@@ -93,11 +91,6 @@ async function submit() {
             登 录
           </el-button>
         </el-form>
-
-        <div class="ly-login-notice">
-          <el-icon><InfoFilled /></el-icon>
-          <span>{{ notice }}</span>
-        </div>
       </div>
     </section>
   </div>
@@ -197,20 +190,6 @@ async function submit() {
   border-radius: 10px;
   margin-top: 4px;
 }
-.ly-login-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 28px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--ly-surface-sunken);
-  border: 1px solid var(--ly-border);
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--ly-text-tertiary);
-}
-
 @media (max-width: 900px) {
   .ly-login-brand {
     display: none;
