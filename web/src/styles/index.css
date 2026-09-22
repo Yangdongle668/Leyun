@@ -112,22 +112,19 @@
 /*
  * ========== 字体 ==========
  *
- * 刻意不走 Google Fonts：乐云是私有化部署，内网没有外网是常态
- * （PDF 阅读器的中日韩字符表就是为此打包进二进制的）。
- * 从 CDN 拉字体在内网必然失败，退化成难看的宋体。
+ * Noto Sans SC 随程序打包（见 styles/fonts.css），不依赖 CDN——
+ * 私有化部署的内网拉不到 Google Fonts，退化成宋体会很难看。
  *
- * 全字符集的 Noto Sans SC 单个字重 woff2 就有 8~10MB，
- * 三个字重打包进去会让二进制接近翻倍，代价不成比例。
+ * 字体文件按 unicode-range 切成了 101 块，浏览器只下载当前页面
+ * 真正用到的那几块，中文界面通常几百 KB 而不是全部 4.6MB。
  *
- * 所以按"优先用本机已装的好字体"来排：
- *   拉丁与数字 → 系统 UI 字体（各平台自带的都足够好）
- *   中文       → Noto Sans SC / 鸿蒙 → 苹方 → 雅黑 → 黑体
- * 装了 Noto 或鸿蒙的机器自动享受，没装的也不会难看。
+ * 后面那串系统字体是兜底：字体文件万一没加载出来（被代理拦掉、
+ * 文件缺失），界面仍然是正常的无衬线中文而不是宋体。
  */
 :root {
   --ly-font-sans:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans SC', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB',
+    'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei UI', 'Microsoft YaHei', 'Source Han Sans SC', 'Noto Sans CJK SC',
     sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
 

@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import LogoMark from '@/components/LogoMark.vue'
 import { api } from '@/api'
 import { useUserStore } from '@/stores/user'
 
@@ -47,24 +48,14 @@ async function submit() {
 
 <template>
   <div class="ly-login">
-    <!-- 左侧品牌区：大面积留白 + 一句话定位，不堆插图 -->
+    <!-- 左侧品牌区：标识 + 一句标语，别的什么都不放 -->
     <section class="ly-login-brand">
       <div class="ly-login-brand-inner">
         <div class="ly-login-logo">
-          <span class="mark">乐</span>
+          <LogoMark :size="34" />
           <span class="name">{{ siteName }}</span>
         </div>
         <h1>让文件在部门之间<br />有序流动</h1>
-        <p>
-          按部门授权的企业网盘。目录权限沿组织架构继承，
-          谁能看、谁能改、谁能带走，一处设定、处处生效。
-        </p>
-        <ul class="ly-login-points">
-          <li><span class="dot"></span>部门树 + 目录级权限继承</li>
-          <li><span class="dot"></span>账号由超级管理员统一开通</li>
-          <li><span class="dot"></span>Office 文档在线编辑</li>
-          <li><span class="dot"></span>秒传、断点续传、操作审计</li>
-        </ul>
       </div>
     </section>
 
@@ -148,59 +139,26 @@ async function submit() {
 .ly-login-logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 56px;
-}
-.ly-login-logo .mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--ly-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 600;
+  gap: var(--ly-space-3);
+  margin-bottom: 48px;
+  /* 标识用 currentColor，在深色底上就是白的 */
+  color: #fff;
 }
 .ly-login-logo .name {
-  font-size: 17px;
+  font-size: var(--ly-font-lg);
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 0.01em;
 }
+/*
+ * 整块只剩标语，字号可以放开。
+ * clamp 让它在窄屏收到 30px、宽屏放到 46px，不用写一堆断点。
+ */
 .ly-login-brand h1 {
-  margin: 0 0 20px;
-  font-size: 38px;
-  line-height: 1.32;
-  font-weight: 600;
-  letter-spacing: 1px;
-}
-.ly-login-brand p {
-  margin: 0 0 40px;
-  font-size: 15px;
-  line-height: 1.9;
-  color: rgba(255, 255, 255, 0.66);
-}
-.ly-login-points {
-  list-style: none;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 14px;
-}
-.ly-login-points li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.82);
-}
-.ly-login-points .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ly-primary);
-  box-shadow: 0 0 0 4px rgba(31, 94, 255, 0.18);
-  flex-shrink: 0;
+  font-size: clamp(30px, 3.4vw, 46px);
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* ---------- 表单区 ---------- */

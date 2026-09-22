@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ChatLineRound, Lock } from '@element-plus/icons-vue'
 import { api } from '@/api'
+import LogoMark from '@/components/LogoMark.vue'
 import { useUserStore } from '@/stores/user'
 import { humanSize, spaceTypeLabel } from '@/utils/format'
 
@@ -86,7 +87,7 @@ function onCommand(cmd: string) {
     <div v-if="isMobile && !collapsed" class="ly-backdrop" @click="collapsed = true"></div>
     <aside class="ly-sidebar" :class="{ 'is-collapsed': collapsed }">
       <div class="ly-brand" @click="router.push('/files')">
-        <span class="ly-brand-mark">乐</span>
+        <span class="ly-brand-mark"><LogoMark :size="19" /></span>
         <span v-show="!collapsed" class="ly-brand-text">{{ store.siteName }}</span>
       </div>
 
@@ -361,9 +362,8 @@ function onCommand(cmd: string) {
   flex-shrink: 0;
   border-radius: var(--ly-radius-sm);
   background: var(--ly-primary);
+  /* 标识内部用 currentColor，这里给白色就够了 */
   color: #fff;
-  font-size: var(--ly-font-md);
-  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
