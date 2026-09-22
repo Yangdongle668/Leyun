@@ -1,0 +1,315 @@
+/*
+ * 乐云设计基线
+ *
+ * 取向是"简洁大气"：一个克制的主色、大面积留白、几乎看不见的分隔线，
+ * 信息靠间距和字重分层，而不是靠边框和色块堆叠。
+ */
+
+:root {
+  /* 主色：偏冷的企业蓝，沉稳但不灰暗 */
+  --ly-primary: #1f5eff;
+  --ly-primary-hover: #4179ff;
+  --ly-primary-active: #1a4fd8;
+  --ly-primary-soft: #eef3ff;
+  --ly-primary-border: #cfdeff;
+
+  --ly-success: #12b76a;
+  --ly-warning: #f5a524;
+  --ly-danger: #f04438;
+  --ly-info: #8a93a5;
+
+  /* 中性色阶 */
+  --ly-bg: #f6f8fb;
+  --ly-surface: #ffffff;
+  --ly-surface-sunken: #fafbfd;
+  --ly-border: #e8ecf3;
+  --ly-border-strong: #d9e0ea;
+
+  --ly-text: #1b2333;
+  --ly-text-secondary: #5b6577;
+  --ly-text-tertiary: #98a1b3;
+  --ly-text-inverse: #ffffff;
+
+  /* 侧栏用深色，和大面积浅色内容区拉开层次 */
+  --ly-sidebar-bg: #141a26;
+  --ly-sidebar-text: #aab4c5;
+  --ly-sidebar-text-active: #ffffff;
+  --ly-sidebar-active-bg: rgba(31, 94, 255, 0.16);
+
+  --ly-radius-sm: 6px;
+  --ly-radius: 10px;
+  --ly-radius-lg: 16px;
+
+  --ly-shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --ly-shadow-sm: 0 2px 8px rgba(16, 24, 40, 0.06);
+  --ly-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --ly-shadow-lg: 0 20px 48px rgba(16, 24, 40, 0.12);
+
+  --ly-header-height: 60px;
+  --ly-sidebar-width: 224px;
+  --ly-sidebar-collapsed: 64px;
+
+  /* 覆盖 Element Plus 的主题变量，让组件库跟着上面的基线走 */
+  --el-color-primary: var(--ly-primary);
+  --el-color-primary-light-3: var(--ly-primary-hover);
+  --el-color-primary-light-5: #7ba2ff;
+  --el-color-primary-light-7: #b3c9ff;
+  --el-color-primary-light-8: #cfdeff;
+  --el-color-primary-light-9: var(--ly-primary-soft);
+  --el-color-primary-dark-2: var(--ly-primary-active);
+  --el-color-success: var(--ly-success);
+  --el-color-warning: var(--ly-warning);
+  --el-color-danger: var(--ly-danger);
+  --el-color-error: var(--ly-danger);
+  --el-color-info: var(--ly-info);
+
+  --el-text-color-primary: var(--ly-text);
+  --el-text-color-regular: var(--ly-text-secondary);
+  --el-text-color-secondary: var(--ly-text-tertiary);
+  --el-text-color-placeholder: var(--ly-text-tertiary);
+  --el-border-color: var(--ly-border-strong);
+  --el-border-color-light: var(--ly-border);
+  --el-border-color-lighter: var(--ly-border);
+  --el-fill-color-blank: var(--ly-surface);
+  --el-fill-color-light: var(--ly-surface-sunken);
+  --el-bg-color: var(--ly-surface);
+  --el-bg-color-page: var(--ly-bg);
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-font-size-base: 14px;
+  --el-box-shadow-light: var(--ly-shadow-sm);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ly-bg);
+  color: var(--ly-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--ly-primary);
+  text-decoration: none;
+}
+
+/* ---------- 滚动条：细、灰、不抢戏 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d3d9e3;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #bcc4d1;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 通用版式 ---------- */
+.ly-page {
+  padding: 24px 28px 32px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.ly-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.ly-page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--ly-text);
+}
+
+.ly-page-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ly-text-tertiary);
+}
+
+.ly-card {
+  background: var(--ly-surface);
+  border: 1px solid var(--ly-border);
+  border-radius: var(--ly-radius);
+  box-shadow: var(--ly-shadow-xs);
+}
+
+.ly-card-pad {
+  padding: 20px 22px;
+}
+
+.ly-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ly-spacer {
+  flex: 1;
+}
+
+.ly-muted {
+  color: var(--ly-text-tertiary);
+}
+
+.ly-mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.ly-empty {
+  padding: 56px 0;
+  text-align: center;
+  color: var(--ly-text-tertiary);
+}
+
+/* 轻量徽标：用于角色、空间类型、权限码这类短标签 */
+.ly-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  background: var(--ly-surface-sunken);
+  color: var(--ly-text-secondary);
+  border: 1px solid var(--ly-border);
+  white-space: nowrap;
+}
+.ly-tag--primary {
+  background: var(--ly-primary-soft);
+  color: var(--ly-primary);
+  border-color: var(--ly-primary-border);
+}
+.ly-tag--warning {
+  background: #fff6e6;
+  color: #b5741a;
+  border-color: #fae3bb;
+}
+.ly-tag--danger {
+  background: #fdeceb;
+  color: #c23a30;
+  border-color: #f8ccc8;
+}
+.ly-tag--success {
+  background: #e8f8f0;
+  color: #0b8a51;
+  border-color: #c4ecd9;
+}
+
+/* ---------- Element Plus 细节微调 ---------- */
+.el-button {
+  font-weight: 500;
+}
+
+.el-table {
+  --el-table-border-color: var(--ly-border);
+  --el-table-header-bg-color: var(--ly-surface-sunken);
+  --el-table-header-text-color: var(--ly-text-secondary);
+  --el-table-row-hover-bg-color: var(--ly-primary-soft);
+}
+
+.el-table th.el-table__cell {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.el-table .el-table__cell {
+  padding: 10px 0;
+}
+
+.el-dialog {
+  border-radius: var(--ly-radius-lg);
+  overflow: hidden;
+}
+
+.el-dialog__header {
+  margin-right: 0;
+  padding: 20px 24px 12px;
+  font-weight: 600;
+}
+
+.el-dialog__body {
+  padding: 8px 24px 20px;
+}
+
+.el-dialog__footer {
+  padding: 8px 24px 20px;
+}
+
+.el-drawer__header {
+  margin-bottom: 0;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--ly-border);
+  color: var(--ly-text);
+  font-weight: 600;
+}
+
+.el-drawer__body {
+  padding: 18px 22px;
+}
+
+.el-message-box {
+  border-radius: var(--ly-radius);
+}
+
+.el-card {
+  border-radius: var(--ly-radius);
+  border-color: var(--ly-border);
+}
+
+.el-menu {
+  border-right: none;
+}
+
+.el-breadcrumb__inner,
+.el-breadcrumb__inner a {
+  font-weight: 400;
+  color: var(--ly-text-secondary);
+}
+
+.el-breadcrumb__item:last-child .el-breadcrumb__inner {
+  color: var(--ly-text);
+  font-weight: 500;
+}
+
+/* 移动端收窄留白，避免横向滚动 */
+@media (max-width: 768px) {
+  .ly-page {
+    padding: 16px;
+  }
+  .ly-page-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

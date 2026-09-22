@@ -1,0 +1,28 @@
+{
+  "name": "leyun-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "乐云企业网盘前端",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.13.2",
+    "element-plus": "^2.14.6",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.43",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0",
+    "vue-tsc": "^3.1.2"
+  }
+}

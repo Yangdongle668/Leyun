@@ -1,0 +1,266 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { api } from '@/api'
+import { useUserStore } from '@/stores/user'
+
+const router = useRouter()
+const route = useRoute()
+const store = useUserStore()
+
+const form = reactive({ username: '', password: '' })
+const loading = ref(false)
+const siteName = ref('乐云企业网盘')
+const notice = ref('本系统不开放自助注册，账号由超级管理员统一开通')
+
+onMounted(async () => {
+  try {
+    const info = await api.siteInfo()
+    siteName.value = info.settings.site_name || siteName.value
+    notice.value = info.register_notice || notice.value
+  } catch {
+    // 站点信息拿不到不影响登录，沿用默认文案。
+  }
+})
+
+async function submit() {
+  if (!form.username.trim() || !form.password) {
+    ElMessage.warning('请输入用户名与口令')
+    return
+  }
+  loading.value = true
+  try {
+    const res = await store.login(form.username.trim(), form.password)
+    const redirect = (route.query.redirect as string) || '/files'
+    await router.push(redirect)
+    if (res.must_reset_password) {
+      ElMessage.warning('当前账号仍在使用初始口令，请尽快修改')
+    }
+  } catch {
+    // 错误提示已由拦截器统一弹出。
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="ly-login">
+    <!-- 左侧品牌区：大面积留白 + 一句话定位，不堆插图 -->
+    <section class="ly-login-brand">
+      <div class="ly-login-brand-inner">
+        <div class="ly-login-logo">
+          <span class="mark">乐</span>
+          <span class="name">{{ siteName }}</span>
+        </div>
+        <h1>让文件在部门之间<br />有序流动</h1>
+        <p>
+          按部门授权的企业网盘。目录权限沿组织架构继承，
+          谁能看、谁能改、谁能带走，一处设定、处处生效。
+        </p>
+        <ul class="ly-login-points">
+          <li><span class="dot"></span>部门树 + 目录级权限继承</li>
+          <li><span class="dot"></span>账号由超级管理员统一开通</li>
+          <li><span class="dot"></span>Office 文档在线编辑</li>
+          <li><span class="dot"></span>秒传、断点续传、操作审计</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 右侧表单区 -->
+    <section class="ly-login-form">
+      <div class="ly-login-card">
+        <h2>登录</h2>
+        <p class="ly-login-sub">使用企业分配的账号登录</p>
+
+        <el-form :model="form" size="large" @submit.prevent="submit">
+          <el-form-item>
+            <el-input
+              v-model="form.username"
+              placeholder="用户名"
+              autocomplete="username"
+              :prefix-icon="'User'"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-input
+              v-model="form.password"
+              type="password"
+              placeholder="口令"
+              autocomplete="current-password"
+              :prefix-icon="'Lock'"
+              show-password
+              @keyup.enter="submit"
+            />
+          </el-form-item>
+          <el-button type="primary" class="ly-login-btn" :loading="loading" @click="submit">
+            登 录
+          </el-button>
+        </el-form>
+
+        <div class="ly-login-notice">
+          <el-icon><InfoFilled /></el-icon>
+          <span>{{ notice }}</span>
+        </div>
+      </div>
+      <footer class="ly-login-foot">乐云企业网盘 · 私有化部署</footer>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.ly-login {
+  display: flex;
+  min-height: 100vh;
+  background: var(--ly-surface);
+}
+
+/* ---------- 品牌区 ---------- */
+.ly-login-brand {
+  flex: 1.1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 64px;
+  background: linear-gradient(150deg, #101a30 0%, #16264a 46%, #1f3f8f 100%);
+  color: #fff;
+  overflow: hidden;
+}
+/* 一层极淡的光晕，避免大块纯色显得死板 */
+.ly-login-brand::after {
+  content: '';
+  position: absolute;
+  width: 620px;
+  height: 620px;
+  right: -180px;
+  top: -160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(31, 94, 255, 0.38) 0%, rgba(31, 94, 255, 0) 68%);
+  pointer-events: none;
+}
+.ly-login-brand-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 460px;
+}
+.ly-login-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 56px;
+}
+.ly-login-logo .mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--ly-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+}
+.ly-login-logo .name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.ly-login-brand h1 {
+  margin: 0 0 20px;
+  font-size: 38px;
+  line-height: 1.32;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.ly-login-brand p {
+  margin: 0 0 40px;
+  font-size: 15px;
+  line-height: 1.9;
+  color: rgba(255, 255, 255, 0.66);
+}
+.ly-login-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.ly-login-points li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+}
+.ly-login-points .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ly-primary);
+  box-shadow: 0 0 0 4px rgba(31, 94, 255, 0.18);
+  flex-shrink: 0;
+}
+
+/* ---------- 表单区 ---------- */
+.ly-login-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  min-width: 380px;
+}
+.ly-login-card {
+  width: 100%;
+  max-width: 348px;
+}
+.ly-login-card h2 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.ly-login-sub {
+  margin: 0 0 32px;
+  font-size: 14px;
+  color: var(--ly-text-tertiary);
+}
+.ly-login-btn {
+  width: 100%;
+  height: 44px;
+  font-size: 15px;
+  letter-spacing: 4px;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+.ly-login-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--ly-surface-sunken);
+  border: 1px solid var(--ly-border);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ly-text-tertiary);
+}
+.ly-login-foot {
+  margin-top: 40px;
+  font-size: 12px;
+  color: var(--ly-text-tertiary);
+}
+
+@media (max-width: 900px) {
+  .ly-login-brand {
+    display: none;
+  }
+  .ly-login-form {
+    min-width: 0;
+  }
+}
+</style>
