@@ -323,7 +323,9 @@ func (h *Handler) Overview(c *gin.Context) {
 
 // GetSettings 读取全部系统设置。
 func (h *Handler) GetSettings(c *gin.Context) {
-	all, err := h.svc.Setting.All()
+	// 必须是 AllSafe：All() 里带着令牌签名密钥和大模型 API Key，
+	// 发给浏览器等于把它们交出去。
+	all, err := h.svc.Setting.AllSafe()
 	if err != nil {
 		response.Fail(c, err)
 		return
@@ -349,7 +351,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	h.audit(c, service.ActionSettingUpdate, "setting", 0, "", "", true)
-	all, err := h.svc.Setting.All()
+	all, err := h.svc.Setting.AllSafe()
 	if err != nil {
 		response.Fail(c, err)
 		return

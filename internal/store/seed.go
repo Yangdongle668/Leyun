@@ -36,6 +36,61 @@ const (
 	SettingJWTSecret = "system.jwt_secret"
 )
 
+// 知识库（AI 问答）配置键。
+//
+// 这些项放在数据库而不是配置文件里，是因为用户要求在管理页面上配：
+// 换模型、换供应商不该需要登服务器改 yaml 再重启。
+const (
+	// SettingAIEnabled 知识库总开关。关掉后索引停止、问答入口消失。
+	SettingAIEnabled = "ai.enabled"
+	// SettingAIBaseURL 大模型服务地址，需兼容 OpenAI 接口（/v1/chat/completions、/v1/embeddings）。
+	// 通义、智谱、DeepSeek、Moonshot 以及自建的 Ollama / Xinference / vLLM 都满足。
+	SettingAIBaseURL = "ai.base_url"
+	// SettingAIAPIKey 大模型的 API Key。属于秘密，只进不出。
+	SettingAIAPIKey = "ai.api_key"
+	// SettingAIChatModel 回答用的对话模型名。
+	SettingAIChatModel = "ai.chat_model"
+	// SettingAIEmbedModel 建索引用的向量模型名。
+	SettingAIEmbedModel = "ai.embed_model"
+	// SettingAIEmbedDim 向量维度。与模型不符时索引建不起来，所以显式记下来，
+	// 换模型导致维度变化时要整体重建。
+	SettingAIEmbedDim = "ai.embed_dim"
+	// SettingAIChunkSize 切块大小（字符数）。
+	SettingAIChunkSize = "ai.chunk_size"
+	// SettingAIChunkOverlap 相邻块的重叠字符数，避免答案正好被切断在边界上。
+	SettingAIChunkOverlap = "ai.chunk_overlap"
+	// SettingAITopK 最终喂给模型的片段数。
+	SettingAITopK = "ai.top_k"
+	// SettingAISpaceIDs 参与索引的空间白名单（逗号分隔），为空表示全部非个人空间。
+	SettingAISpaceIDs = "ai.space_ids"
+	// SettingAIIncludePersonal 是否把个人空间也纳入索引。默认否——
+	// 个人空间是员工的私人区域，检索时虽然会被权限过滤挡住，
+	// 但没必要让它多一份脱离 ACL 的向量副本。
+	SettingAIIncludePersonal = "ai.include_personal"
+	// SettingAIMaxFileSize 单个文件参与索引的大小上限（字节），超过直接跳过。
+	SettingAIMaxFileSize = "ai.max_file_size"
+)
+
+// 域名与证书配置键。
+//
+// 同样放数据库：绑域名、换域名属于日常运维，不该每次都登服务器改 yaml。
+const (
+	// SettingTLSEnabled 是否启用自动 HTTPS。
+	SettingTLSEnabled = "tls.enabled"
+	// SettingTLSDomains 绑定的域名（逗号分隔）。证书只会为这些域名签发。
+	SettingTLSDomains = "tls.domains"
+	// SettingTLSEmail ACME 账号联系邮箱，证书将到期时签发机构会往这里发提醒。
+	SettingTLSEmail = "tls.email"
+	// SettingTLSDirectoryURL ACME 目录地址，留空用 Let's Encrypt 正式环境。
+	// 调试时填测试环境，避免把正式环境的签发频率限额用光。
+	SettingTLSDirectoryURL = "tls.directory_url"
+	// SettingTLSRedirect 是否把 HTTP 请求整体跳转到 HTTPS。
+	SettingTLSRedirect = "tls.redirect"
+	// SettingTLSAgreedAt 记录管理员同意签发机构服务条款的时间。
+	// ACME 协议要求明示同意，所以要有人点过这一下才允许申请。
+	SettingTLSAgreedAt = "tls.agreed_at"
+)
+
 // EnsureJWTSecret 返回令牌签名密钥。
 //
 // 配置里没写就自动生成一个并存进数据库——这样用户不配置也能安全启动，

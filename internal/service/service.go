@@ -6,6 +6,7 @@ import (
 
 	"github.com/Yangdongle668/Leyun/internal/config"
 	"github.com/Yangdongle668/Leyun/internal/pkg/jwtx"
+	"github.com/Yangdongle668/Leyun/internal/pkg/logx"
 	"github.com/Yangdongle668/Leyun/internal/storage"
 )
 
@@ -29,6 +30,8 @@ type Registry struct {
 	Office  *OfficeService
 	APIKey  *APIKeyService
 	AI      *AIService
+	KB      *KBService
+	TLS     *TLSService
 }
 
 // NewRegistry 组装全部服务。
@@ -47,12 +50,14 @@ func NewRegistry(db *gorm.DB, cfg *config.Config, store *storage.Store, jwtMgr *
 	office := NewOfficeService(cfg, jwtMgr, file, acl, space, audit)
 	apiKey := NewAPIKeyService(db)
 	ai := NewAIService(db, acl, file, space, user)
+	kb := NewKBService(db, setting, acl, file, logx.L())
+	tlsSvc := NewTLSService(setting, cfg.Storage.CertDir())
 
 	return &Registry{
 		DB: db, Cfg: cfg, Store: store, JWT: jwtMgr,
 		ACL: acl, Dept: dept, User: user, Space: space, File: file,
 		Upload: upload, Share: share, Audit: audit, Setting: setting,
 		Auth: auth, Stats: stats, Office: office,
-		APIKey: apiKey, AI: ai,
+		APIKey: apiKey, AI: ai, KB: kb, TLS: tlsSvc,
 	}
 }

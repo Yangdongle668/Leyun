@@ -74,6 +74,9 @@ type DatabaseConfig struct {
 type StorageConfig struct {
 	// Root 是 blob（去重后的真实文件）存放目录。
 	Root string `yaml:"root"`
+	// CertRoot 是自动申请来的 HTTPS 证书与 ACME 账号密钥的存放目录。
+	// 留空则取 Root 的同级目录 certs。
+	CertRoot string `yaml:"cert_root"`
 	// TempRoot 是分片上传的临时目录。
 	TempRoot string `yaml:"temp_root"`
 	// ChunkSize 是建议的分片大小，前端按此值切片。
@@ -295,6 +298,17 @@ func (c *Config) normalize() error {
 // Addr 返回 net/http 监听地址。
 func (c *Config) Addr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
+}
+
+// CertDir 返回证书缓存目录。
+//
+// 默认放在 blob 目录的同级而不是里面：blob 目录会被备份脚本整个打包，
+// 私钥混在里面容易跟着到处跑。
+func (s StorageConfig) CertDir() string {
+	if strings.TrimSpace(s.CertRoot) != "" {
+		return s.CertRoot
+	}
+	return filepath.Join(filepath.Dir(strings.TrimRight(s.Root, string(filepath.Separator))), "certs")
 }
 
 func setString(dst *string, env string) {

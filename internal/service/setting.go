@@ -33,6 +33,22 @@ func (s *SettingService) All() (map[string]string, error) {
 	return out, nil
 }
 
+// AllSafe 返回可以交给前端的配置：秘密项被替换成掩码。
+//
+// 管理页面一律用这个，不要用 All()。
+func (s *SettingService) AllSafe() (map[string]string, error) {
+	all, err := s.All()
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range all {
+		if secretSettings[k] {
+			all[k] = MaskSecret(v)
+		}
+	}
+	return all, nil
+}
+
 // Get 读取单个配置，缺失时返回 def。
 func (s *SettingService) Get(key, def string) string {
 	var item model.Setting
@@ -75,6 +91,53 @@ var editableSettings = map[string]bool{
 	store.SettingDefaultDeptQuota:   true,
 	store.SettingAllowPublicShare:   true,
 	store.SettingTrashRetentionDays: true,
+
+	store.SettingAIEnabled:         true,
+	store.SettingAIBaseURL:         true,
+	store.SettingAIAPIKey:          true,
+	store.SettingAIChatModel:       true,
+	store.SettingAIEmbedModel:      true,
+	store.SettingAIEmbedDim:        true,
+	store.SettingAIChunkSize:       true,
+	store.SettingAIChunkOverlap:    true,
+	store.SettingAITopK:            true,
+	store.SettingAISpaceIDs:        true,
+	store.SettingAIIncludePersonal: true,
+	store.SettingAIMaxFileSize:     true,
+
+	store.SettingTLSEnabled:      true,
+	store.SettingTLSDomains:      true,
+	store.SettingTLSEmail:        true,
+	store.SettingTLSDirectoryURL: true,
+	store.SettingTLSRedirect:     true,
+	store.SettingTLSAgreedAt:     true,
+}
+
+// 秘密配置项：可以写进去，但绝不能再读出来给前端。
+//
+// 原先管理页面直接把 All() 的结果整个发给浏览器，令牌签名密钥也在里面——
+// 拿到它就能伪造任意账号（包括超管）的登录令牌，而且改密、停用都拦不住，
+// 只有轮换密钥才能止血。秘密在服务层就挡掉，比指望每个调用方记得过滤可靠。
+var secretSettings = map[string]bool{
+	store.SettingJWTSecret: true,
+	store.SettingAIAPIKey:  true,
+}
+
+// IsSecret 判断某个配置项是否属于不可回显的秘密。
+func IsSecret(key string) bool { return secretSettings[key] }
+
+// MaskSecret 把秘密压成可供人辨认、但不足以使用的形式。
+//
+// 只保留尾部 4 位：够管理员确认"配的是这把"，又不足以拼回原值。
+func MaskSecret(v string) string {
+	if v == "" {
+		return ""
+	}
+	r := []rune(v)
+	if len(r) <= 4 {
+		return "****"
+	}
+	return "****" + string(r[len(r)-4:])
 }
 
 // Set 更新（或新建）一个配置项。
@@ -82,6 +145,17 @@ func (s *SettingService) Set(key, value string) error {
 	if !editableSettings[key] {
 		return fmt.Errorf("配置项 %s 不允许修改", key)
 	}
+	// 秘密项前端拿到的是掩码，原样提交回来意味着"这一项没动"。
+	// 不挡住的话，管理员改个站点名就会把 API Key 覆盖成 "****abcd"。
+	if secretSettings[key] && value != "" && value == MaskSecret(s.Get(key, "")) {
+		return nil
+	}
+	return s.forceSet(key, value)
+}
+
+// forceSet 绕过白名单直接落库，供系统自身写入配置（如自动生成的密钥、证书状态）。
+// 它不检查白名单，所以绝不能直接接到 HTTP 入参上。
+func (s *SettingService) forceSet(key, value string) error {
 	var item model.Setting
 	err := s.db.Where("config_key = ?", key).First(&item).Error
 	switch {

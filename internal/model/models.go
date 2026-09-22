@@ -394,6 +394,90 @@ type NodeTombstone struct {
 // TableName 指定表名。
 func (NodeTombstone) TableName() string { return "ly_node_tombstone" }
 
+// 知识库文档的索引状态。
+const (
+	KBPending  = "pending"  // 排队等待索引
+	KBIndexing = "indexing" // 正在抽取或向量化
+	KBDone     = "done"     // 已建好索引
+	KBSkipped  = "skipped"  // 不是能抽出文字的类型，或抽出来是空的（扫描件）
+	KBFailed   = "failed"   // 抽取或向量化出错，详情在 Err
+)
+
+// KBDoc 是知识库里一份"内容"的索引档案。
+//
+// 注意主键语义是 BlobHash 而不是 NodeID：乐云是内容寻址存储，
+// 同一份合同被三个部门各存一份时 NodeID 有三个、BlobHash 只有一个。
+// 按内容建档，抽取与向量化就只做一次——文件越大、部门越多，省得越多。
+// 至于"谁能看到这份内容"，那是检索时按 BlobHash 反查节点再过权限的事。
+type KBDoc struct {
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	BlobHash string `gorm:"size:64;uniqueIndex;not null" json:"blob_hash"`
+	// Name/Ext 取首次见到这份内容时的文件名，仅用于展示与排错。
+	Name   string `gorm:"size:255" json:"name"`
+	Ext    string `gorm:"size:32" json:"ext"`
+	Size   int64  `gorm:"not null;default:0" json:"size"`
+	Status string `gorm:"size:16;index;not null" json:"status"`
+	Chars  int    `gorm:"not null;default:0" json:"chars"`
+	Chunks int    `gorm:"not null;default:0" json:"chunks"`
+	// Model/Dim 记录这份索引是用哪个向量模型、什么维度建的。
+	// 换模型后旧向量与新查询不在同一个空间里，比对出来的相似度没有意义，
+	// 所以换模型必须整体重建，靠这两个字段识别。
+	Model string `gorm:"size:64" json:"model"`
+	Dim   int    `gorm:"not null;default:0" json:"dim"`
+	Err   string `gorm:"size:512" json:"err,omitempty"`
+	// Attempts 记录失败重试次数，连续失败的文档不再无限重试。
+	Attempts  int        `gorm:"not null;default:0" json:"attempts"`
+	IndexedAt *time.Time `json:"indexed_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (KBDoc) TableName() string { return "ly_kb_doc" }
+
+// KBChunk 是一个文本块及其向量。
+type KBChunk struct {
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	BlobHash string `gorm:"size:64;index;not null" json:"blob_hash"`
+	Seq      int    `gorm:"not null" json:"seq"`
+	Text     string `gorm:"type:text" json:"text"`
+	// Vector 是 float32 小端序的裸字节，且已做 L2 归一化——
+	// 归一化之后余弦相似度就等于点积，检索时少一遍开方和除法。
+	Vector    []byte    `gorm:"type:blob" json:"-"`
+	Dim       int       `gorm:"not null" json:"dim"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName 指定表名。
+func (KBChunk) TableName() string { return "ly_kb_chunk" }
+
+// KBConversation 是一轮问答会话。会话属于发起人，别人看不到。
+type KBConversation struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID    uint64    `gorm:"index;not null" json:"user_id"`
+	Title     string    `gorm:"size:128" json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `gorm:"index" json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (KBConversation) TableName() string { return "ly_kb_conversation" }
+
+// KBMessage 是会话里的一条消息。
+type KBMessage struct {
+	ID      uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	ConvID  uint64 `gorm:"index;not null" json:"conv_id"`
+	Role    string `gorm:"size:16;not null" json:"role"` // user / assistant
+	Content string `gorm:"type:text" json:"content"`
+	// Citations 是引用到的文档，JSON 数组。存的是当时这个人有权看到的那些节点，
+	// 不重新计算——权限后来变了不该改写历史记录里显示过什么。
+	Citations string    `gorm:"type:text" json:"citations,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName 指定表名。
+func (KBMessage) TableName() string { return "ly_kb_message" }
+
 // Setting 是运行期可改的系统配置项（键值对）。
 //
 // 列名特意避开 key/value：二者在 MySQL 中是保留字，用原名会逼着每条 SQL 都加反引号，
@@ -414,5 +498,6 @@ func AllModels() []any {
 		&Department{}, &User{}, &Space{}, &Node{}, &Blob{},
 		&AccessRule{}, &Share{}, &ShareTarget{}, &UploadSession{},
 		&AuditLog{}, &Setting{}, &APIKey{}, &NodeTombstone{},
+		&KBDoc{}, &KBChunk{}, &KBConversation{}, &KBMessage{},
 	}
 }

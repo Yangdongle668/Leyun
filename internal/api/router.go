@@ -143,6 +143,17 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 		// 选人/选部门在授权对话框里要用，普通成员也需要（但只返回基础信息）。
 		app.GET("/directory/users", h.SearchUsers)
 		app.GET("/directory/departments", h.DepartmentList)
+
+		// 知识库问答：每个人都有，但检索结果按他本人的权限过滤。
+		// 过滤发生在内容进入模型上下文之前，见 KBService.Retrieve。
+		kb := app.Group("/kb")
+		{
+			kb.GET("/status", h.KBStatusForUser)
+			kb.POST("/ask", h.KBAsk)
+			kb.GET("/conversations", h.KBConversations)
+			kb.GET("/conversations/:id", h.KBConversationDetail)
+			kb.DELETE("/conversations/:id", h.KBDeleteConversation)
+		}
 	}
 
 	// ---- 管理后台 ----
@@ -175,6 +186,20 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 		admin.POST("/api-keys", superAdmin, h.CreateAPIKey)
 		admin.POST("/api-keys/:id/status", superAdmin, h.SetAPIKeyStatus)
 		admin.DELETE("/api-keys/:id", superAdmin, h.DeleteAPIKey)
+
+		// 知识库：大模型的连接配置里带着 API Key，只许超管看和改。
+		admin.GET("/ai/settings", superAdmin, h.GetAISettings)
+		admin.PUT("/ai/settings", superAdmin, h.UpdateAISettings)
+		admin.POST("/ai/test", superAdmin, h.TestAIConnection)
+		admin.GET("/ai/index", superAdmin, h.KBAdminStatus)
+		admin.POST("/ai/reindex", superAdmin, h.KBReindex)
+		admin.POST("/ai/retry", superAdmin, h.KBRetryFailed)
+		admin.GET("/ai/search", superAdmin, h.KBSearchPreview)
+
+		// 域名与 HTTPS 证书。
+		admin.GET("/tls", superAdmin, h.GetTLSSettings)
+		admin.PUT("/tls", superAdmin, h.UpdateTLSSettings)
+		admin.POST("/tls/issue", superAdmin, h.IssueTLSCert)
 	}
 
 	mountFrontend(r)
