@@ -1,0 +1,356 @@
+// Package model 定义乐云企业网盘的持久化实体。
+package model
+
+import (
+	"time"
+)
+
+// Role 是全局角色。乐云只区分三种全局身份，具体到目录的能力由 ACL 决定。
+type Role string
+
+const (
+	// RoleSuperAdmin 超级管理员：系统内唯一可以开通账号的角色，拥有全部数据的最终控制权。
+	RoleSuperAdmin Role = "super_admin"
+	// RoleDeptAdmin 部门管理员：管理本部门（含子部门）空间的目录与授权，但不能开通账号。
+	RoleDeptAdmin Role = "dept_admin"
+	// RoleMember 普通成员。
+	RoleMember Role = "member"
+)
+
+// Valid 判断角色是否合法。
+func (r Role) Valid() bool {
+	switch r {
+	case RoleSuperAdmin, RoleDeptAdmin, RoleMember:
+		return true
+	}
+	return false
+}
+
+// Label 返回角色中文名。
+func (r Role) Label() string {
+	switch r {
+	case RoleSuperAdmin:
+		return "超级管理员"
+	case RoleDeptAdmin:
+		return "部门管理员"
+	case RoleMember:
+		return "普通成员"
+	}
+	return string(r)
+}
+
+// UserStatus 是账号状态。
+type UserStatus string
+
+const (
+	// UserActive 正常。
+	UserActive UserStatus = "active"
+	// UserDisabled 已停用：保留数据但禁止登录。
+	UserDisabled UserStatus = "disabled"
+)
+
+// SpaceType 区分三类空间。
+type SpaceType string
+
+const (
+	// SpacePersonal 个人空间，仅归属用户本人（及超管）可见。
+	SpacePersonal SpaceType = "personal"
+	// SpaceDepartment 部门空间，按部门授权。
+	SpaceDepartment SpaceType = "department"
+	// SpacePublic 公共空间，全员可见（默认只读）。
+	SpacePublic SpaceType = "public"
+)
+
+// PrincipalType 是授权对象的类型。
+type PrincipalType string
+
+const (
+	// PrincipalUser 指定到人。
+	PrincipalUser PrincipalType = "user"
+	// PrincipalDept 指定到部门。
+	PrincipalDept PrincipalType = "dept"
+	// PrincipalRole 指定到全局角色。
+	PrincipalRole PrincipalType = "role"
+	// PrincipalEveryone 全体登录用户。
+	PrincipalEveryone PrincipalType = "everyone"
+)
+
+// Valid 判断授权对象类型是否合法。
+func (p PrincipalType) Valid() bool {
+	switch p {
+	case PrincipalUser, PrincipalDept, PrincipalRole, PrincipalEveryone:
+		return true
+	}
+	return false
+}
+
+// Department 是部门树节点。
+//
+// Path 是物化路径，形如 "/1/4/9/"，既包含自身也包含全部祖先，
+// 借助 `LIKE '/1/4/%'` 即可一次性捞出子树，避免递归查询。
+type Department struct {
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	ParentID uint64 `gorm:"index;not null;default:0" json:"parent_id"`
+	Name     string `gorm:"size:128;not null" json:"name"`
+	Code     string `gorm:"size:64;index" json:"code"`
+	Path     string `gorm:"size:512;index;not null" json:"path"`
+	Depth    int    `gorm:"not null;default:0" json:"depth"`
+	Sort     int    `gorm:"not null;default:0" json:"sort"`
+	LeaderID uint64 `gorm:"index;not null;default:0" json:"leader_id"`
+	Remark   string `gorm:"size:255" json:"remark"`
+	// Enabled 等布尔字段刻意不写 default 标签：GORM 在 INSERT 时会跳过带默认值字段的零值，
+	// 于是显式传入的 false 会被数据库默认值悄悄改成 true。创建方一律显式赋值。
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Department) TableName() string { return "ly_department" }
+
+// User 是账号。乐云没有注册入口，所有账号都由超级管理员开通，CreatedBy 记录开通人。
+type User struct {
+	ID           uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Username     string     `gorm:"size:64;uniqueIndex;not null" json:"username"`
+	PasswordHash string     `gorm:"size:255;not null" json:"-"`
+	Nickname     string     `gorm:"size:64" json:"nickname"`
+	Email        string     `gorm:"size:128;index" json:"email"`
+	Phone        string     `gorm:"size:32;index" json:"phone"`
+	JobTitle     string     `gorm:"size:64" json:"job_title"`
+	DeptID       uint64     `gorm:"index;not null;default:0" json:"dept_id"`
+	Role         Role       `gorm:"size:32;index;not null;default:member" json:"role"`
+	Status       UserStatus `gorm:"size:16;index;not null;default:active" json:"status"`
+	// QuotaBytes 个人空间配额，0 表示不限制。
+	QuotaBytes int64 `gorm:"not null;default:0" json:"quota_bytes"`
+	// MustChangePassword 为 true 时，除改密外的接口一律拒绝（首次使用默认口令的账号会被打上该标记）。
+	MustChangePassword bool       `gorm:"not null;default:false" json:"must_change_password"`
+	LoginFailures      int        `gorm:"not null;default:0" json:"-"`
+	LockedUntil        *time.Time `json:"locked_until,omitempty"`
+	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
+	LastLoginIP        string     `gorm:"size:64" json:"last_login_ip,omitempty"`
+	CreatedBy          uint64     `gorm:"index;not null;default:0" json:"created_by"`
+	Remark             string     `gorm:"size:255" json:"remark"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (User) TableName() string { return "ly_user" }
+
+// IsSuperAdmin 判断是否超级管理员。
+func (u *User) IsSuperAdmin() bool { return u != nil && u.Role == RoleSuperAdmin }
+
+// Space 是一个独立的文件空间（个人 / 部门 / 公共）。
+type Space struct {
+	ID   uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type SpaceType `gorm:"size:16;index;not null" json:"type"`
+	Name string    `gorm:"size:128;not null" json:"name"`
+	// OwnerID 个人空间的归属用户；其它类型为 0。
+	OwnerID uint64 `gorm:"index;not null;default:0" json:"owner_id"`
+	// DeptID 部门空间对应的部门；其它类型为 0。
+	DeptID uint64 `gorm:"index;not null;default:0" json:"dept_id"`
+	// QuotaBytes 空间配额，0 表示不限制。
+	QuotaBytes int64 `gorm:"not null;default:0" json:"quota_bytes"`
+	UsedBytes  int64 `gorm:"not null;default:0" json:"used_bytes"`
+	// 同 Department.Enabled：不设 default，避免显式的 false 被吞掉。
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Space) TableName() string { return "ly_space" }
+
+// Node 是空间内的一个目录或文件。目录树用 ParentID + Path 双写，便于移动子树时批量改路径。
+type Node struct {
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	SpaceID  uint64 `gorm:"index:idx_node_space_parent;not null" json:"space_id"`
+	ParentID uint64 `gorm:"index:idx_node_space_parent;not null;default:0" json:"parent_id"`
+	Name     string `gorm:"size:255;not null" json:"name"`
+	IsDir    bool   `gorm:"index;not null;default:false" json:"is_dir"`
+	// Path 是含自身 ID 的物化路径，形如 "/3/18/42/"，根目录为 "/"。
+	Path  string `gorm:"size:1024;index;not null" json:"path"`
+	Depth int    `gorm:"not null;default:0" json:"depth"`
+	Size  int64  `gorm:"not null;default:0" json:"size"`
+	// BlobHash 指向去重后的实际内容；目录为空。
+	BlobHash string `gorm:"size:64;index" json:"blob_hash,omitempty"`
+	MimeType string `gorm:"size:128" json:"mime_type,omitempty"`
+	Ext      string `gorm:"size:32;index" json:"ext,omitempty"`
+	Version  int    `gorm:"not null;default:1" json:"version"`
+	// Trashed 标记回收站条目。TrashRootID 指向本次删除操作的顶层节点，
+	// 用于"整目录还原"——子节点跟随顶层节点一起进出回收站。
+	Trashed     bool       `gorm:"index;not null;default:false" json:"trashed"`
+	TrashRootID uint64     `gorm:"index;not null;default:0" json:"trash_root_id,omitempty"`
+	TrashedAt   *time.Time `json:"trashed_at,omitempty"`
+	TrashedBy   uint64     `gorm:"not null;default:0" json:"trashed_by,omitempty"`
+	// TrashParentID 保存删除前的父目录，用于还原。
+	TrashParentID uint64    `gorm:"not null;default:0" json:"-"`
+	CreatedBy     uint64    `gorm:"index;not null;default:0" json:"created_by"`
+	UpdatedBy     uint64    `gorm:"not null;default:0" json:"updated_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Node) TableName() string { return "ly_node" }
+
+// Blob 是去重后的物理文件。同一份内容在磁盘上只存一份，由 RefCount 控制回收。
+type Blob struct {
+	Hash      string    `gorm:"primaryKey;size:64" json:"hash"`
+	Size      int64     `gorm:"not null" json:"size"`
+	RefCount  int64     `gorm:"not null;default:0" json:"ref_count"`
+	StorePath string    `gorm:"size:512;not null" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Blob) TableName() string { return "ly_blob" }
+
+// AccessRule 是一条 ACL 授权/拒绝记录。
+//
+// NodeID 为 0 表示作用于整个空间；否则作用于该目录（或文件）。
+// Allow 与 Deny 都是位掩码，Deny 优先级更高——企业里"某人除外"是刚需。
+type AccessRule struct {
+	ID            uint64        `gorm:"primaryKey;autoIncrement" json:"id"`
+	SpaceID       uint64        `gorm:"index:idx_rule_space_node;not null" json:"space_id"`
+	NodeID        uint64        `gorm:"index:idx_rule_space_node;not null;default:0" json:"node_id"`
+	PrincipalType PrincipalType `gorm:"size:16;index;not null" json:"principal_type"`
+	// PrincipalID 对应用户 ID / 部门 ID；PrincipalRole 时存角色名的哈希无意义，改用 PrincipalRoleName。
+	PrincipalID uint64 `gorm:"index;not null;default:0" json:"principal_id"`
+	// PrincipalRole 仅当 PrincipalType=role 时有效。
+	PrincipalRole Role `gorm:"size:32" json:"principal_role,omitempty"`
+	// Allow / Deny 权限位。
+	Allow Permission `gorm:"not null;default:0" json:"allow"`
+	Deny  Permission `gorm:"not null;default:0" json:"deny"`
+	// IncludeSubDept 仅当 PrincipalType=dept 时有效：是否把授权下放给子部门成员。
+	//
+	// 这两个开关都不写 default 标签：它们是权限边界，
+	// 管理员取消勾选后必须真的存成 false，绝不能被数据库默认值改回 true。
+	IncludeSubDept bool `gorm:"not null" json:"include_sub_dept"`
+	// Inheritable 为 false 时，该规则只作用于本目录，不向子目录继承。
+	Inheritable bool       `gorm:"not null" json:"inheritable"`
+	ExpireAt    *time.Time `json:"expire_at,omitempty"`
+	Remark      string     `gorm:"size:255" json:"remark,omitempty"`
+	CreatedBy   uint64     `gorm:"not null;default:0" json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (AccessRule) TableName() string { return "ly_access_rule" }
+
+// ShareScope 区分分享的可见范围。
+type ShareScope string
+
+const (
+	// ShareInternal 仅企业内部登录用户可访问（可再限定到部门/人）。
+	ShareInternal ShareScope = "internal"
+	// SharePublic 任何拿到链接的人都能访问（可加提取码）。
+	SharePublic ShareScope = "public"
+)
+
+// Share 是一条分享记录。
+type Share struct {
+	ID      uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Code    string     `gorm:"size:32;uniqueIndex;not null" json:"code"`
+	SpaceID uint64     `gorm:"index;not null" json:"space_id"`
+	NodeID  uint64     `gorm:"index;not null" json:"node_id"`
+	Scope   ShareScope `gorm:"size:16;not null;default:internal" json:"scope"`
+	// PasswordHash 为空表示无需提取码。
+	PasswordHash string `gorm:"size:255" json:"-"`
+	HasPassword  bool   `gorm:"-" json:"has_password"`
+	// Perms 访客在该分享下的权限，只允许 view/download/upload 的子集。
+	Perms        Permission `gorm:"not null;default:0" json:"perms"`
+	ExpireAt     *time.Time `json:"expire_at,omitempty"`
+	MaxDownloads int64      `gorm:"not null;default:0" json:"max_downloads"`
+	Downloads    int64      `gorm:"not null;default:0" json:"downloads"`
+	Views        int64      `gorm:"not null;default:0" json:"views"`
+	Revoked      bool       `gorm:"not null;default:false" json:"revoked"`
+	CreatedBy    uint64     `gorm:"index;not null" json:"created_by"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Share) TableName() string { return "ly_share" }
+
+// ShareTarget 限定内部分享的可见对象；一条分享没有任何 target 时表示全员可见。
+type ShareTarget struct {
+	ID            uint64        `gorm:"primaryKey;autoIncrement" json:"id"`
+	ShareID       uint64        `gorm:"index;not null" json:"share_id"`
+	PrincipalType PrincipalType `gorm:"size:16;not null" json:"principal_type"`
+	PrincipalID   uint64        `gorm:"not null;default:0" json:"principal_id"`
+}
+
+// TableName 指定表名。
+func (ShareTarget) TableName() string { return "ly_share_target" }
+
+// UploadSession 记录一次分片上传的进度，支持断点续传。
+type UploadSession struct {
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	UploadID string `gorm:"size:64;uniqueIndex;not null" json:"upload_id"`
+	UserID   uint64 `gorm:"index;not null" json:"user_id"`
+	SpaceID  uint64 `gorm:"not null" json:"space_id"`
+	ParentID uint64 `gorm:"not null;default:0" json:"parent_id"`
+	Filename string `gorm:"size:255;not null" json:"filename"`
+	Size     int64  `gorm:"not null" json:"size"`
+	// ChunkSize 与 ChunkCount 在 init 时确定，之后不可更改。
+	ChunkSize  int64 `gorm:"not null" json:"chunk_size"`
+	ChunkCount int   `gorm:"not null" json:"chunk_count"`
+	// Hash 是整文件的 SHA-256，用于秒传与完整性校验；可为空（未知时在合并阶段计算）。
+	Hash string `gorm:"size:64;index" json:"hash,omitempty"`
+	// ReceivedMask 是分片到达位图（JSON 数组，元素为已收到的分片序号）。
+	ReceivedMask string     `gorm:"type:text" json:"-"`
+	Completed    bool       `gorm:"not null;default:false" json:"completed"`
+	ExpireAt     time.Time  `gorm:"index;not null" json:"expire_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+}
+
+// TableName 指定表名。
+func (UploadSession) TableName() string { return "ly_upload_session" }
+
+// AuditLog 是操作审计。企业网盘的合规底线：谁、什么时候、对哪个文件做了什么。
+type AuditLog struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID     uint64    `gorm:"index;not null;default:0" json:"user_id"`
+	Username   string    `gorm:"size:64;index" json:"username"`
+	DeptID     uint64    `gorm:"index;not null;default:0" json:"dept_id"`
+	Action     string    `gorm:"size:64;index;not null" json:"action"`
+	TargetType string    `gorm:"size:32" json:"target_type"`
+	TargetID   uint64    `gorm:"index;not null;default:0" json:"target_id"`
+	Target     string    `gorm:"size:512" json:"target"`
+	Detail     string    `gorm:"type:text" json:"detail"`
+	Success    bool      `gorm:"index;not null;default:true" json:"success"`
+	IP         string    `gorm:"size:64" json:"ip"`
+	UserAgent  string    `gorm:"size:255" json:"user_agent"`
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
+}
+
+// TableName 指定表名。
+func (AuditLog) TableName() string { return "ly_audit_log" }
+
+// Setting 是运行期可改的系统配置项（键值对）。
+//
+// 列名特意避开 key/value：二者在 MySQL 中是保留字，用原名会逼着每条 SQL 都加反引号，
+// 而反引号在 PostgreSQL 下又不合法，直接断了多数据库支持。
+type Setting struct {
+	Key       string    `gorm:"column:config_key;primaryKey;size:64" json:"key"`
+	Value     string    `gorm:"column:config_value;type:text" json:"value"`
+	Remark    string    `gorm:"size:255" json:"remark"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (Setting) TableName() string { return "ly_setting" }
+
+// AllModels 返回需要自动迁移的全部实体。
+func AllModels() []any {
+	return []any{
+		&Department{}, &User{}, &Space{}, &Node{}, &Blob{},
+		&AccessRule{}, &Share{}, &ShareTarget{}, &UploadSession{},
+		&AuditLog{}, &Setting{},
+	}
+}

@@ -1,0 +1,29 @@
+# 运行数据
+/data/
+*.db
+*.db-shm
+*.db-wal
+/config.yaml
+
+# 构建产物
+/bin/
+/dist/
+leyun
+leyun.exe
+
+# 前端构建产物（由 make web / Docker 构建阶段生成）
+/web/dist/
+/web/node_modules/
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
+
+# 依赖与缓存
+node_modules/
+.npm/
+*.log
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+.DS_Store
