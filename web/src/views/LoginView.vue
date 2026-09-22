@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import LogoMark from '@/components/LogoMark.vue'
+import ParticleField from '@/components/ParticleField.vue'
 import { api } from '@/api'
 import { useUserStore } from '@/stores/user'
 
@@ -50,6 +51,8 @@ async function submit() {
   <div class="ly-login">
     <!-- 左侧品牌区：标识 + 一句标语，别的什么都不放 -->
     <section class="ly-login-brand">
+      <!-- 微粒连线背景。放在内容之前，自然落在下层 -->
+      <ParticleField />
       <div class="ly-login-brand-inner">
         <div class="ly-login-logo">
           <LogoMark :size="34" />
@@ -96,7 +99,6 @@ async function submit() {
           <span>{{ notice }}</span>
         </div>
       </div>
-      <footer class="ly-login-foot">乐云企业网盘 · 私有化部署</footer>
     </section>
   </div>
 </template>
@@ -128,12 +130,13 @@ async function submit() {
   right: -180px;
   top: -160px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(31, 94, 255, 0.38) 0%, rgba(31, 94, 255, 0) 68%);
+  background: radial-gradient(circle, rgba(37, 99, 240, 0.38) 0%, rgba(37, 99, 240, 0) 68%);
   pointer-events: none;
 }
 .ly-login-brand-inner {
   position: relative;
-  z-index: 1;
+  /* 高于粒子层，否则文字会被点和线盖住 */
+  z-index: 2;
   max-width: 460px;
 }
 .ly-login-logo {
@@ -205,11 +208,6 @@ async function submit() {
   border: 1px solid var(--ly-border);
   font-size: 12.5px;
   line-height: 1.7;
-  color: var(--ly-text-tertiary);
-}
-.ly-login-foot {
-  margin-top: 40px;
-  font-size: 12px;
   color: var(--ly-text-tertiary);
 }
 
