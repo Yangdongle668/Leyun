@@ -146,6 +146,7 @@ cd Leyun
 ```bash
 ./deploy.sh --yes                 # 全用默认值，不提问（适合自动化）
 ./deploy.sh --no-office           # 不部署 ONLYOFFICE，省约 2GB 内存
+./deploy.sh --no-https            # 不占用 80/443（前面已有 Nginx 等反向代理时用）
 ./deploy.sh --port 9000           # 换网盘端口
 ./deploy.sh --office-port 9001    # 换文档服务端口
 ./deploy.sh --host pan.corp.com   # 指定对外域名
@@ -431,8 +432,9 @@ LEYUN_OFFICE_JWT_SECRET=与文档服务器一致的密钥
 - 申请不下来的域名（IP、`.local`、`.internal`）在保存时就挡住并说明原因，
   而不是让你等几十秒收一句英文报错。ACME 的常见失败也翻成了中文。
 - 调试阶段建议先用**测试环境**：正式环境每周签发次数有限额，试错几次就可能被锁一星期。
+- `./deploy.sh` 默认就映射 80/443；被别的服务占着时会**自动降级**到高位端口并提示，
+  网盘照常可用，不会因为端口冲突而部署失败。也可以 `--no-https` 主动不占。
 - 跑在 Nginx / 云负载均衡后面的话，证书通常由它们管，这一页可以不用开。
-  80/443 与原有端口并存，不影响现有部署。
 
 ---
 

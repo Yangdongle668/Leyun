@@ -5,6 +5,7 @@
 #   ./deploy.sh                 交互式部署（首次推荐）
 #   ./deploy.sh --yes           全部用默认值，不提问
 #   ./deploy.sh --no-office     不部署 ONLYOFFICE（不需要在线编辑时可省下约 2GB 内存）
+#   ./deploy.sh --no-https      不占用 80/443（前面已有 Nginx 等反向代理时用）
 #   ./deploy.sh --port 9000     指定网盘端口
 #
 # 脚本只做三件事：检查环境、生成配置、拉起容器。反复执行是安全的。
@@ -40,6 +41,12 @@ WITH_OFFICE=1
 LEYUN_PORT=8080
 ONLYOFFICE_PORT=8081
 PUBLIC_HOST=""
+# 80/443 用于「域名与 HTTPS」的自动证书。--no-https 可以主动不占这两个端口。
+WITH_TLS_PORTS=1
+# 不占 80/443 时映射到这两个高位端口：容器里那两个监听不会有人访问，
+# 但 compose 的 ports 写法没法"有条件地不映射"，只能挪到无害的地方。
+TLS_FALLBACK_HTTP=18080
+TLS_FALLBACK_HTTPS=18443
 
 usage() {
   sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
@@ -50,6 +57,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -y|--yes)        ASSUME_YES=1; shift ;;
     --no-office)     WITH_OFFICE=0; shift ;;
+    --no-https)      WITH_TLS_PORTS=0; shift ;;
     --port)          LEYUN_PORT="${2:?--port 需要一个端口号}"; shift 2 ;;
     --office-port)   ONLYOFFICE_PORT="${2:?--office-port 需要一个端口号}"; shift 2 ;;
     --host)          PUBLIC_HOST="${2:?--host 需要一个地址}"; shift 2 ;;
@@ -86,11 +94,25 @@ port_busy() {
   fi
 }
 
+# 端口是不是被乐云自己占着。是的话不算冲突，重新部署会替换掉。
+held_by_leyun() {
+  [ -f "$ENV_FILE" ] && docker ps --format '{{.Names}}' | grep -qE '^(leyun|leyun-onlyoffice)$'
+}
+
+# 80/443 是不是乐云自己占着。
+#
+# 不能用 held_by_leyun 代替：那个只说明"乐云在跑"。上一轮因为 Nginx 占着 80
+# 而降级到高位端口时，乐云同样在跑，但 80 是 Nginx 的——若据此判成"自己占的"，
+# 这一轮就会把 80 写回 .env，容器起不来。所以直接看容器到底映射了哪些端口。
+leyun_holds_tls_ports() {
+  docker ps --filter 'name=^leyun$' --format '{{.Ports}}' 2>/dev/null |
+    grep -qE '(^|[^0-9])(80|443)->'
+}
+
 check_port() {
   local p="$1" name="$2"
   if port_busy "$p"; then
-    # 已经是乐云自己占着的话不算冲突，重新部署会替换掉。
-    if [ -f "$ENV_FILE" ] && docker ps --format '{{.Names}}' | grep -qE '^(leyun|leyun-onlyoffice)$'; then
+    if held_by_leyun; then
       warn "端口 $p 当前被乐云自己占用，将在重启时释放"
     else
       die "端口 $p 已被占用（$name），请用 --port / --office-port 换一个端口"
@@ -99,6 +121,22 @@ check_port() {
 }
 check_port "$LEYUN_PORT" "网盘"
 [ "$WITH_OFFICE" -eq 1 ] && check_port "$ONLYOFFICE_PORT" "ONLYOFFICE"
+
+# 80/443 与上面几个不同：被占用了也不该让部署失败。
+# 它们只影响「域名与 HTTPS」里的自动证书，网盘本身照常跑。
+# 占着 80 的多半是 Nginx，那种部署本来就该由 Nginx 管证书。
+TLS_AVAILABLE=1
+if [ "$WITH_TLS_PORTS" -eq 0 ]; then
+  TLS_AVAILABLE=0
+  LEYUN_HTTP_PORT="$TLS_FALLBACK_HTTP"
+  LEYUN_HTTPS_PORT="$TLS_FALLBACK_HTTPS"
+elif { port_busy 80 || port_busy 443; } && ! leyun_holds_tls_ports; then
+  TLS_AVAILABLE=0
+  LEYUN_HTTP_PORT="$TLS_FALLBACK_HTTP"
+  LEYUN_HTTPS_PORT="$TLS_FALLBACK_HTTPS"
+  warn "80 或 443 已被占用，自动 HTTPS 不可用（网盘本身不受影响）"
+  warn "  若前面已有 Nginx 等反向代理，证书交给它管即可，见 docs/domain-https.md"
+fi
 
 # 磁盘空间：镜像加上 ONLYOFFICE 大约要 4GB。
 avail_kb=$(df -Pk "$SCRIPT_DIR" | awk 'NR==2 {print $4}')
@@ -168,6 +206,10 @@ LEYUN_VERSION=1.0.0
 TZ=Asia/Shanghai
 
 LEYUN_PORT=${LEYUN_PORT}
+# 自动 HTTPS 用的端口。被占用时 deploy.sh 会改成高位端口，
+# 那种情况下证书应当交给前面的反向代理管。
+LEYUN_HTTP_PORT=${LEYUN_HTTP_PORT:-80}
+LEYUN_HTTPS_PORT=${LEYUN_HTTPS_PORT:-443}
 LEYUN_JWT_SECRET=${JWT_SECRET}
 LEYUN_ADMIN_USERNAME=${ADMIN_USERNAME}
 LEYUN_ADMIN_PASSWORD=${ADMIN_PASSWORD}
@@ -240,6 +282,11 @@ printf "  初始口令    %s\n" "$ADMIN_PASSWORD"
 printf "${C_DIM}%s${C_RESET}\n" "────────────────────────────────────────────────────────"
 printf "  该账号是系统中唯一能开通其他账号的角色，本系统不提供自助注册。\n"
 printf "  登录后请到「管理后台 → 部门管理」建好组织架构，再开通成员账号。\n"
+if [ "$TLS_AVAILABLE" -eq 1 ]; then
+  printf "  有域名的话，到「管理后台 → 域名与 HTTPS」填上即可自动申请证书并续期。\n"
+else
+  printf "  ${C_DIM}80/443 未占用于本服务，内置的自动 HTTPS 不可用（见 docs/domain-https.md）。${C_RESET}\n"
+fi
 if [ "$ADMIN_PASSWORD" = "admin" ]; then
   printf "  ${C_YELLOW}⚠ 初始口令仍是 admin，请登录后立即修改。${C_RESET}\n"
 fi
