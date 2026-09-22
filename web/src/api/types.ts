@@ -179,6 +179,103 @@ export interface APIKey {
   created_at: string
 }
 
+/** 知识库回答引用的一份资料。一定是提问人有权访问的那个节点。 */
+export interface KBCitation {
+  chunk_id: number
+  text: string
+  score: number
+  node_id: number
+  space_id: number
+  name: string
+  path_names: string[]
+}
+
+export interface KBConversation {
+  id: number
+  user_id: number
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface KBMessage {
+  id: number
+  conv_id: number
+  role: 'user' | 'assistant'
+  content: string
+  citations?: string
+  created_at: string
+}
+
+export interface KBStatus {
+  enabled: boolean
+  ready: boolean
+  can_chat: boolean
+  indexing: boolean
+  total: number
+  done: number
+  pending: number
+  skipped: number
+  failed: number
+  chunks: number
+  indexed_mem: number
+  embed_model: string
+  chat_model: string
+  dim: number
+}
+
+export interface KBDoc {
+  id: number
+  blob_hash: string
+  name: string
+  ext: string
+  size: number
+  status: 'pending' | 'indexing' | 'done' | 'skipped' | 'failed'
+  chars: number
+  chunks: number
+  err?: string
+  indexed_at?: string
+  updated_at: string
+}
+
+export interface AIConfig {
+  enabled: boolean
+  base_url: string
+  /** 只回显掩码，真值不出服务端。 */
+  api_key_mask: string
+  api_key_set: boolean
+  chat_model: string
+  embed_model: string
+  embed_dim: number
+  chunk_size: number
+  chunk_overlap: number
+  top_k: number
+  space_ids: number[]
+  include_personal: boolean
+  max_file_size: number
+}
+
+export interface CertInfo {
+  domain: string
+  issued: boolean
+  issuer?: string
+  not_before?: string
+  not_after?: string
+  days_left: number
+  err?: string
+}
+
+export interface TLSStatus {
+  enabled: boolean
+  agreed: boolean
+  redirect: boolean
+  domains: string[]
+  email: string
+  staging: boolean
+  certs: CertInfo[]
+  last_err?: string
+}
+
 export interface AuditLog {
   id: number
   user_id: number

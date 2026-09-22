@@ -302,8 +302,9 @@ func (c *Config) Addr() string {
 
 // CertDir 返回证书缓存目录。
 //
-// 默认放在 blob 目录的同级而不是里面：blob 目录会被备份脚本整个打包，
-// 私钥混在里面容易跟着到处跑。
+// 默认是 data/certs：与 blob 同在 data 下，因此会被备份脚本一起打包。
+// 这是有意的——恢复之后证书还在，不用重新申请，
+// 省得撞上签发机构那个"每周只能签几次"的限额。
 func (s StorageConfig) CertDir() string {
 	if strings.TrimSpace(s.CertRoot) != "" {
 		return s.CertRoot

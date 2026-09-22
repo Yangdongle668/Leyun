@@ -22,7 +22,7 @@ func TestNormalizeBaseURL(t *testing.T) {
 		"  https://api.openai.com/v1/chat/completions": "https://api.openai.com/v1",
 		"http://127.0.0.1:11434/v1/embeddings":         "http://127.0.0.1:11434/v1",
 		"http://ollama:11434":                          "http://ollama:11434/v1",
-		"": "",
+		"":                                             "",
 	}
 	for in, want := range cases {
 		if got := NormalizeBaseURL(in); got != want {

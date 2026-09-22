@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { ChatLineRound, Lock } from '@element-plus/icons-vue'
+import { api } from '@/api'
 import { useUserStore } from '@/stores/user'
 import { humanSize, spaceTypeLabel } from '@/utils/format'
 
@@ -22,10 +24,18 @@ function syncViewport() {
   }
 }
 
-onMounted(() => {
+// 没配大模型时不该在侧栏挂一个点进去只会说"未启用"的入口。
+const kbReady = ref(false)
+
+onMounted(async () => {
   isMobile.value = window.innerWidth <= MOBILE_WIDTH
   collapsed.value = isMobile.value
   window.addEventListener('resize', syncViewport)
+  try {
+    kbReady.value = (await api.kbStatus()).can_chat
+  } catch {
+    kbReady.value = false
+  }
 })
 onUnmounted(() => window.removeEventListener('resize', syncViewport))
 
@@ -141,6 +151,15 @@ function onCommand(cmd: string) {
         <div class="ly-nav-divider"></div>
 
         <button
+          v-if="kbReady"
+          class="ly-nav-item"
+          :class="{ 'is-active': activeKey === 'assistant' }"
+          @click="router.push({ name: 'assistant' })"
+        >
+          <el-icon><ChatLineRound /></el-icon>
+          <span v-show="!collapsed">智能问答</span>
+        </button>
+        <button
           class="ly-nav-item"
           :class="{ 'is-active': activeKey === 'shares' }"
           @click="router.push({ name: 'shares' })"
@@ -199,6 +218,24 @@ function onCommand(cmd: string) {
           >
             <el-icon><Tickets /></el-icon>
             <span v-show="!collapsed">审计日志</span>
+          </button>
+          <button
+            v-if="store.isSuperAdmin"
+            class="ly-nav-item"
+            :class="{ 'is-active': activeKey === 'admin-ai' }"
+            @click="router.push({ name: 'admin-ai' })"
+          >
+            <el-icon><ChatLineRound /></el-icon>
+            <span v-show="!collapsed">智能问答</span>
+          </button>
+          <button
+            v-if="store.isSuperAdmin"
+            class="ly-nav-item"
+            :class="{ 'is-active': activeKey === 'admin-domain' }"
+            @click="router.push({ name: 'admin-domain' })"
+          >
+            <el-icon><Lock /></el-icon>
+            <span v-show="!collapsed">域名与 HTTPS</span>
           </button>
           <button
             v-if="store.isSuperAdmin"

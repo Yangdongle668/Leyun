@@ -460,7 +460,7 @@ func safePageText(p pdf.Page) (text string, err error) {
 func tidy(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
-	s = strings.ReplaceAll(s, " ", " ") // 不换行空格
+	s = strings.ReplaceAll(s, " ", " ")                 // 不换行空格
 	s = strings.ReplaceAll(s, string(rune(0xFEFF)), "") // 零宽空格 / BOM
 
 	lines := strings.Split(s, "\n")

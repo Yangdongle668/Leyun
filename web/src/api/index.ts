@@ -1,11 +1,17 @@
 import { get, post, put, del, type PageBody } from './request'
 import type {
+  AIConfig,
   APIKey,
   AccessRule,
   AuditLog,
   DeptNode,
   Department,
+  CertInfo,
   FileNode,
+  KBConversation,
+  KBDoc,
+  KBMessage,
+  KBStatus,
   ListResult,
   OfficeEditorConfig,
   Overview,
@@ -15,6 +21,7 @@ import type {
   Profile,
   Share,
   Space,
+  TLSStatus,
   TrashItem,
   User,
 } from './types'
@@ -250,6 +257,49 @@ export const api = {
   setAPIKeyStatus: (id: number, enabled: boolean) =>
     post(`/admin/api-keys/${id}/status`, { enabled }),
   deleteAPIKey: (id: number) => del(`/admin/api-keys/${id}`),
+
+  /* ---------------- 知识库问答（用户侧） ---------------- */
+
+  kbStatus: () => get<{ enabled: boolean; can_chat: boolean }>('/kb/status'),
+  kbConversations: (limit = 30) => get<KBConversation[]>('/kb/conversations', { limit }),
+  kbMessages: (id: number) => get<KBMessage[]>(`/kb/conversations/${id}`),
+  deleteKBConversation: (id: number) => del(`/kb/conversations/${id}`),
+
+  /* ---------------- 知识库（管理侧） ---------------- */
+
+  aiSettings: () =>
+    get<{ config: AIConfig; status: KBStatus; extensions: string[] }>('/admin/ai/settings'),
+  updateAISettings: (data: Partial<AIConfig> & { api_key?: string }) =>
+    put<{ config: AIConfig; need_reindex: boolean; reindex_hint: string }>('/admin/ai/settings', data),
+  testAIConnection: (data: Partial<AIConfig> & { api_key?: string }) =>
+    post<{
+      embed_ok?: boolean
+      embed_dim?: number
+      dim_mismatch?: string
+      chat_ok?: boolean
+      chat_reply?: string
+    }>('/admin/ai/test', data),
+  kbIndexStatus: () => get<{ status: KBStatus; problems: KBDoc[] }>('/admin/ai/index'),
+  kbReindex: () => post('/admin/ai/reindex'),
+  kbRetryFailed: () => post<{ retried: number }>('/admin/ai/retry'),
+  kbSearchPreview: (q: string, limit = 10) =>
+    get<Array<{ node_id: number; name: string; path_names: string[]; score: number; preview: string }>>(
+      '/admin/ai/search',
+      { q, limit },
+    ),
+
+  /* ---------------- 域名与 HTTPS ---------------- */
+
+  tlsSettings: () => get<{ status: TLSStatus; raw: string }>('/admin/tls'),
+  updateTLSSettings: (data: {
+    enabled?: boolean
+    domains?: string
+    email?: string
+    directory_url?: string
+    redirect?: boolean
+    agree_tos?: boolean
+  }) => put<{ status: TLSStatus; restart_required: boolean; restart_hint: string }>('/admin/tls', data),
+  issueTLSCert: () => post<{ certs: CertInfo[]; status: TLSStatus }>('/admin/tls/issue'),
 
   settings: () =>
     get<{

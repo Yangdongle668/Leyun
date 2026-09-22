@@ -34,6 +34,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '文件' },
       },
       {
+        path: 'assistant',
+        name: 'assistant',
+        component: () => import('@/views/AssistantView.vue'),
+        meta: { title: '智能问答' },
+      },
+      {
         path: 'trash',
         name: 'trash',
         component: () => import('@/views/TrashView.vue'),
@@ -80,6 +86,18 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-audit',
         component: () => import('@/views/admin/AuditView.vue'),
         meta: { title: '审计日志', admin: true },
+      },
+      {
+        path: 'admin/ai',
+        name: 'admin-ai',
+        component: () => import('@/views/admin/AiView.vue'),
+        meta: { title: '智能问答', superAdmin: true },
+      },
+      {
+        path: 'admin/domain',
+        name: 'admin-domain',
+        component: () => import('@/views/admin/DomainView.vue'),
+        meta: { title: '域名与 HTTPS', superAdmin: true },
       },
       {
         path: 'admin/api-keys',
