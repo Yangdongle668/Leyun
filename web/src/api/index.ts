@@ -82,10 +82,15 @@ export const api = {
   /* ---------------- 权限 ---------------- */
 
   listACL: (space_id: number, node_id: number) =>
-    get<{ direct: AccessRule[]; inherited: AccessRule[]; catalog: PermissionOption[] }>('/acl', {
-      space_id,
-      node_id,
-    }),
+    get<{
+      direct: AccessRule[]
+      inherited: AccessRule[]
+      catalog: PermissionOption[]
+      inherit: boolean
+      can_toggle_inherit: boolean
+    }>('/acl', { space_id, node_id }),
+  setInheritance: (space_id: number, node_id: number, inherit: boolean) =>
+    post<{ inherit: boolean }>('/acl/inherit', { space_id, node_id, inherit }),
   grant: (data: {
     space_id: number
     node_id: number

@@ -1,0 +1,66 @@
+# 乐云企业网盘 · Docker 编排
+#
+# 由 ./deploy.sh 生成 .env 后一键启动；也可以自己写好 .env 再 docker compose up -d。
+# 默认只启两个服务：网盘本体 + ONLYOFFICE 文档服务器（用于 Office 在线编辑）。
+
+services:
+  leyun:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${LEYUN_VERSION:-1.0.0}
+    image: leyun:${LEYUN_VERSION:-1.0.0}
+    container_name: leyun
+    restart: unless-stopped
+    ports:
+      - "${LEYUN_PORT:-8080}:8080"
+    volumes:
+      # 数据库、文件内容、临时分片全在这一个目录下，备份它就等于备份整个系统。
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      LEYUN_JWT_SECRET: ${LEYUN_JWT_SECRET}
+      LEYUN_ADMIN_USERNAME: ${LEYUN_ADMIN_USERNAME:-admin}
+      LEYUN_ADMIN_PASSWORD: ${LEYUN_ADMIN_PASSWORD:-admin}
+      LEYUN_OFFICE_ENABLED: ${LEYUN_OFFICE_ENABLED:-true}
+      # 浏览器访问文档服务器的地址，必须是用户电脑能打开的地址。
+      LEYUN_OFFICE_PUBLIC_URL: ${LEYUN_OFFICE_PUBLIC_URL:-http://localhost:8081}
+      # 后端回连文档服务器走容器网络，用服务名即可。
+      LEYUN_OFFICE_INTERNAL_URL: http://onlyoffice
+      # 文档服务器回调乐云同样走容器网络。
+      LEYUN_OFFICE_CALLBACK_BASE: http://leyun:8080
+      LEYUN_OFFICE_JWT_SECRET: ${LEYUN_OFFICE_JWT_SECRET}
+    depends_on:
+      - onlyoffice
+    networks:
+      - leyun-net
+
+  onlyoffice:
+    image: onlyoffice/documentserver:${ONLYOFFICE_VERSION:-8.2}
+    container_name: leyun-onlyoffice
+    restart: unless-stopped
+    ports:
+      - "${ONLYOFFICE_PORT:-8081}:80"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 开启 JWT 校验，防止任何人拿着文档地址就能改文件。
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${LEYUN_OFFICE_JWT_SECRET}
+      JWT_HEADER: Authorization
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-logs:/var/log/onlyoffice
+      - onlyoffice-cache:/var/lib/onlyoffice/documentserver/App_Data/cache/files
+    networks:
+      - leyun-net
+
+networks:
+  leyun-net:
+    driver: bridge
+
+volumes:
+  onlyoffice-data:
+  onlyoffice-logs:
+  onlyoffice-cache:

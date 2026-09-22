@@ -99,6 +99,7 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 			acl.GET("", h.ListACL)
 			acl.GET("/mine", h.MyPermissions)
 			acl.POST("", h.Grant)
+			acl.POST("/inherit", h.SetInheritance)
 			acl.DELETE("/:id", h.Revoke)
 		}
 

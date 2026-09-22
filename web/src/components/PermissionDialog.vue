@@ -21,6 +21,9 @@ const visible = computed({
 const loading = ref(false)
 const direct = ref<AccessRule[]>([])
 const inherited = ref<AccessRule[]>([])
+const inherit = ref(true)
+const canToggleInherit = ref(false)
+const togglingInherit = ref(false)
 
 const ALL_PERMS: PermCode[] = ['view', 'download', 'upload', 'edit', 'delete', 'share', 'manage']
 
@@ -70,8 +73,41 @@ async function load() {
     const res = await api.listACL(props.spaceId, props.nodeId)
     direct.value = res.direct
     inherited.value = res.inherited
+    inherit.value = res.inherit
+    canToggleInherit.value = res.can_toggle_inherit
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 切断继承是"这个目录只给某几个人"的正确做法。
+ *
+ * 用拒绝规则去挡部门是不行的——拒绝优先于一切允许，会把你想放行的那个人
+ * 一起挡在外面。所以这里要把后果讲清楚再让人点确认。
+ */
+async function toggleInherit(next: boolean) {
+  const title = next ? '恢复继承上层权限' : '切断继承上层权限'
+  const message = next
+    ? '恢复后，空间根与上级目录的授权会重新对本目录生效。'
+    : '切断后，本目录及其子目录不再接收上层传下来的任何授权，只认下面「本级授权」里的规则。' +
+      '如果此处还没有任何授权，除超级管理员外将没有人能进入。'
+  try {
+    await ElMessageBox.confirm(message, title, {
+      type: 'warning',
+      confirmButtonText: next ? '恢复继承' : '切断继承',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  togglingInherit.value = true
+  try {
+    await api.setInheritance(props.spaceId, props.nodeId, next)
+    ElMessage.success(next ? '已恢复继承' : '已切断继承')
+    await load()
+  } finally {
+    togglingInherit.value = false
   }
 }
 
@@ -310,6 +346,27 @@ function principalTypeLabel(t: PrincipalType) {
         </div>
       </div>
 
+      <!-- 继承开关 -->
+      <div v-if="canToggleInherit" class="ly-perm-inherit" :class="{ 'is-cut': !inherit }">
+        <el-icon :size="16">
+          <Connection v-if="inherit" />
+          <Scissor v-else />
+        </el-icon>
+        <div class="ly-perm-inherit-text">
+          <strong>{{ inherit ? '继承上层权限' : '已切断继承' }}</strong>
+          <span>
+            {{
+              inherit
+                ? '空间根与上级目录的授权对本目录生效。'
+                : '本目录只认下面的「本级授权」，上层授权一概不生效。'
+            }}
+          </span>
+        </div>
+        <el-button size="small" :loading="togglingInherit" @click="toggleInherit(!inherit)">
+          {{ inherit ? '切断继承' : '恢复继承' }}
+        </el-button>
+      </div>
+
       <!-- 已有授权 -->
       <div class="ly-perm-list">
         <div class="ly-perm-list-title">
@@ -357,6 +414,7 @@ function principalTypeLabel(t: PrincipalType) {
             继承的授权
             <span class="ly-muted">（来自上级目录或空间根，需到来源处修改）</span>
           </div>
+          <!-- 切断继承时后端不会返回这些规则，这里出现即说明它们确实生效 -->
           <el-table :data="inherited" size="small">
             <el-table-column label="对象" min-width="190">
               <template #default="{ row }">
@@ -482,6 +540,38 @@ function principalTypeLabel(t: PrincipalType) {
 }
 .ly-preset.is-active strong {
   color: var(--ly-primary);
+}
+
+.ly-perm-inherit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-radius: var(--ly-radius);
+  background: var(--ly-primary-soft);
+  border: 1px solid var(--ly-primary-border);
+  color: var(--ly-primary);
+}
+.ly-perm-inherit.is-cut {
+  background: #fff6e6;
+  border-color: #fae3bb;
+  color: #b5741a;
+}
+.ly-perm-inherit-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+}
+.ly-perm-inherit-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ly-perm-inherit-text span {
+  font-size: 12px;
+  color: var(--ly-text-secondary);
 }
 
 .ly-perm-list-title {

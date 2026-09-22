@@ -177,6 +177,12 @@ type Node struct {
 	MimeType string `gorm:"size:128" json:"mime_type,omitempty"`
 	Ext      string `gorm:"size:32;index" json:"ext,omitempty"`
 	Version  int    `gorm:"not null;default:1" json:"version"`
+	// ACLIsolated 为 true 时，本目录不再接收上层传下来的授权，只认挂在自己身上的规则。
+	//
+	// 这是"这个目录只给某几个人"的唯一正确做法：用拒绝规则去挡部门是不行的，
+	// 拒绝优先于一切允许，会把你想放行的那个人一起挡在外面。
+	// 同 Enabled，不写 default 标签，避免显式的 false 被 GORM 吞掉。
+	ACLIsolated bool `gorm:"not null" json:"acl_isolated"`
 	// Trashed 标记回收站条目。TrashRootID 指向本次删除操作的顶层节点，
 	// 用于"整目录还原"——子节点跟随顶层节点一起进出回收站。
 	Trashed     bool       `gorm:"index;not null;default:false" json:"trashed"`

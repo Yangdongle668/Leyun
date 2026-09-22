@@ -1,0 +1,29 @@
+# 运行数据绝不能进镜像
+data/
+*.db
+*.db-shm
+*.db-wal
+config.yaml
+.env
+
+# 构建产物
+bin/
+dist/
+leyun
+leyun.exe
+internal/web/dist/assets/
+internal/web/dist/index.html
+
+# 依赖与缓存
+web/node_modules/
+web/dist/
+node_modules/
+
+# 版本库与文档
+.git/
+.github/
+.gitignore
+*.md
+!README.md
+.idea/
+.vscode/

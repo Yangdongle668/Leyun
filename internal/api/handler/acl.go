@@ -69,11 +69,67 @@ func (h *Handler) ListACL(c *gin.Context) {
 		response.Fail(c, err)
 		return
 	}
+	inherit := true
+	if node != nil {
+		inherit = !node.ACLIsolated
+	}
 	response.OK(c, gin.H{
 		"direct":    directViews,
 		"inherited": inheritedViews,
 		"catalog":   model.PermissionCatalog(),
+		"inherit":   inherit,
+		// 空间根没有"上层"可继承，前端据此隐藏开关。
+		"can_toggle_inherit": node != nil && node.IsDir,
 	})
+}
+
+type inheritReq struct {
+	SpaceID uint64 `json:"space_id"`
+	NodeID  uint64 `json:"node_id"`
+	Inherit bool   `json:"inherit"`
+}
+
+// SetInheritance 打开或切断某个目录的权限继承。
+//
+// 切断继承是"这个目录只给某几个人"的正确做法——用拒绝规则去挡部门会把
+// 想放行的人一起挡住，因为拒绝优先于一切允许。
+func (h *Handler) SetInheritance(c *gin.Context) {
+	subj, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	req, ok := bind[inheritReq](c)
+	if !ok {
+		return
+	}
+	space, err := h.svc.Space.Get(req.SpaceID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	node, err := h.svc.File.GetNode(req.SpaceID, req.NodeID)
+	if err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if node == nil {
+		response.Fail(c, response.BadRequest("空间根目录不能切断继承"))
+		return
+	}
+	if _, err := h.svc.ACL.Require(subj, space, node, model.PermManage); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	if err := h.svc.ACL.SetInheritance(node, req.Inherit); err != nil {
+		response.Fail(c, err)
+		return
+	}
+	detail := "切断继承"
+	if req.Inherit {
+		detail = "恢复继承"
+	}
+	h.audit(c, service.ActionACLGrant, "acl", node.ID, node.Name, detail, true)
+	response.OK(c, gin.H{"inherit": req.Inherit})
 }
 
 func (h *Handler) decorateRules(rules []model.AccessRule, inherited bool) ([]ruleView, error) {

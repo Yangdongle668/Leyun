@@ -185,21 +185,69 @@ func (s *ACLService) deptManagedBy(subj *Subject, deptID uint64) (bool, error) {
 	return treex.IsDescendant(dept.Path, subj.ManagedDeptPath), nil
 }
 
-// rulesForNode 取出可能影响该节点的全部规则：空间级 + 祖先目录 + 自身。
-func (s *ACLService) rulesForNode(spaceID uint64, node *model.Node) ([]model.AccessRule, error) {
-	nodeIDs := []uint64{0}
-	if node != nil {
-		nodeIDs = append(nodeIDs, treex.IDs(node.Path)...)
-		if node.ID != 0 {
-			nodeIDs = append(nodeIDs, node.ID)
+// scopeNodeIDs 算出授权的收集范围：从节点自身向上，直到遇到第一个切断继承的目录为止。
+//
+// 没有切断时一路收到空间根（node_id = 0）；
+// 某一级切断了，就到那一级为止，空间根与更上层的授权都传不进来。
+func (s *ACLService) scopeNodeIDs(node *model.Node) ([]uint64, error) {
+	if node == nil {
+		return []uint64{0}, nil
+	}
+	chainIDs := treex.IDs(node.Path)
+	if len(chainIDs) == 0 {
+		return []uint64{0}, nil
+	}
+
+	var chain []model.Node
+	err := s.db.Select("id", "acl_isolated").Where("id IN ?", chainIDs).Find(&chain).Error
+	if err != nil {
+		return nil, fmt.Errorf("加载目录继承设置失败: %w", err)
+	}
+	isolated := make(map[uint64]bool, len(chain))
+	for _, n := range chain {
+		isolated[n.ID] = n.ACLIsolated
+	}
+
+	out := make([]uint64, 0, len(chainIDs)+1)
+	for i := len(chainIDs) - 1; i >= 0; i-- {
+		id := chainIDs[i]
+		out = append(out, id)
+		if isolated[id] {
+			// 到此为止：这一级自己的授权仍然算数，再往上的都不算。
+			return out, nil
 		}
 	}
-	var rules []model.AccessRule
-	err := s.db.Where("space_id = ? AND node_id IN ?", spaceID, nodeIDs).Find(&rules).Error
+	return append(out, 0), nil
+}
+
+// rulesForNode 取出可能影响该节点的全部规则。
+func (s *ACLService) rulesForNode(spaceID uint64, node *model.Node) ([]model.AccessRule, error) {
+	nodeIDs, err := s.scopeNodeIDs(node)
 	if err != nil {
+		return nil, err
+	}
+	var rules []model.AccessRule
+	if err := s.db.Where("space_id = ? AND node_id IN ?", spaceID, nodeIDs).Find(&rules).Error; err != nil {
 		return nil, fmt.Errorf("加载权限规则失败: %w", err)
 	}
 	return rules, nil
+}
+
+// SetInheritance 打开或切断某个目录的权限继承。
+func (s *ACLService) SetInheritance(node *model.Node, inherit bool) error {
+	if node == nil {
+		return response.BadRequest("空间根目录不能切断继承")
+	}
+	if !node.IsDir {
+		return response.BadRequest("只有目录可以设置继承")
+	}
+	err := s.db.Model(&model.Node{}).Where("id = ?", node.ID).
+		Update("acl_isolated", !inherit).Error
+	if err != nil {
+		return fmt.Errorf("更新继承设置失败: %w", err)
+	}
+	node.ACLIsolated = !inherit
+	return nil
 }
 
 // EffectiveForChildren 在已知父目录权限的前提下，批量算出一批子节点的权限。
@@ -216,13 +264,16 @@ func (s *ACLService) EffectiveForChildren(subj *Subject, space *model.Space, par
 		}
 		return out, nil
 	}
-	for _, c := range children {
-		out[c.ID] = parentPerm
-	}
-
 	ids := make([]uint64, 0, len(children))
-	for _, c := range children {
+	for i := range children {
+		c := &children[i]
 		ids = append(ids, c.ID)
+		if c.ACLIsolated {
+			// 切断继承的目录不吃父级权限，只认挂在自己身上的规则。
+			out[c.ID] = model.PermNone
+		} else {
+			out[c.ID] = parentPerm
+		}
 	}
 	var rules []model.AccessRule
 	if err := s.db.Where("space_id = ? AND node_id IN ?", space.ID, ids).Find(&rules).Error; err != nil {
@@ -324,15 +375,24 @@ func (s *ACLService) ListRules(spaceID, nodeID uint64) ([]model.AccessRule, erro
 	return rules, nil
 }
 
-// ListInheritedRules 列出从空间根与祖先目录继承下来的规则，供前端展示"权限从哪来"。
+// ListInheritedRules 列出实际继承下来的规则，供前端展示"权限从哪来"。
+//
+// 本目录切断了继承时返回空——界面上不该再列一堆其实不生效的规则误导人。
 func (s *ACLService) ListInheritedRules(spaceID uint64, node *model.Node) ([]model.AccessRule, error) {
-	if node == nil {
+	if node == nil || node.ACLIsolated {
 		return nil, nil
 	}
-	ancestors := treex.AncestorIDs(node.Path)
-	ids := append([]uint64{0}, ancestors...)
+	scope, err := s.scopeNodeIDs(node)
+	if err != nil {
+		return nil, err
+	}
+	// scope 的头一个是节点自身，那是"本级授权"，不算继承。
+	ids := scope[1:]
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var rules []model.AccessRule
-	err := s.db.Where("space_id = ? AND node_id IN ? AND inheritable = ?", spaceID, ids, true).
+	err = s.db.Where("space_id = ? AND node_id IN ? AND inheritable = ?", spaceID, ids, true).
 		Order("node_id asc").Find(&rules).Error
 	if err != nil {
 		return nil, fmt.Errorf("查询继承权限失败: %w", err)

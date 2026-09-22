@@ -81,6 +81,8 @@ export interface FileNode {
   mime_type?: string
   ext?: string
   version: number
+  /** 为 true 表示该目录已切断继承，只认挂在自己身上的授权。 */
+  acl_isolated: boolean
   trashed: boolean
   created_by: number
   created_at: string

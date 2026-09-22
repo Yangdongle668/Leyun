@@ -1,5 +1,7 @@
 # 运行数据
 /data/
+/backups/
+/.env
 *.db
 *.db-shm
 *.db-wal

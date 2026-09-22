@@ -288,6 +288,135 @@ func TestNonInheritableRuleStaysOnItsNode(t *testing.T) {
 	}
 }
 
+// 切断继承是"这个目录只给某几个人"的唯一正确做法：
+// 用拒绝去挡部门会把想放行的那个人一起挡住，因为拒绝优先于一切允许。
+func TestIsolatedDirectoryStopsInheritance(t *testing.T) {
+	env := newTestEnv(t)
+	// 全平台组可读写整个空间。
+	env.grant(t, &model.AccessRule{
+		SpaceID: env.pfSpace.ID, PrincipalType: model.PrincipalDept,
+		PrincipalID: env.pfDept.ID, Allow: model.PermCollaborate,
+		IncludeSubDept: true, Inheritable: true,
+	})
+	salary := env.mkNode(t, env.pfSpace, nil, "薪酬")
+	detail := env.mkNode(t, env.pfSpace, salary, "明细")
+
+	if got := env.effective(t, env.zhang, env.pfSpace, salary); !got.Has(model.PermView) {
+		t.Fatalf("前置条件失败：张三本应继承到权限，实际 %s", got)
+	}
+
+	// 切断继承后，上层的部门授权进不来。
+	if err := env.acl.SetInheritance(salary, false); err != nil {
+		t.Fatalf("切断继承失败: %v", err)
+	}
+	if got := env.effective(t, env.zhang, env.pfSpace, salary); got != model.PermNone {
+		t.Errorf("切断继承后不应再有权限，实际 %s", got)
+	}
+	// 子目录同样被隔离在外。
+	if got := env.effective(t, env.zhang, env.pfSpace, detail); got != model.PermNone {
+		t.Errorf("切断继承应连子目录一起生效，实际 %s", got)
+	}
+
+	// 再单独授权给某个人——关键在于他没有被任何 deny 波及。
+	env.grant(t, &model.AccessRule{
+		SpaceID: env.pfSpace.ID, NodeID: salary.ID,
+		PrincipalType: model.PrincipalUser, PrincipalID: env.zhang.ID,
+		Allow: model.PermCollaborate, Inheritable: true,
+	})
+	if got := env.effective(t, env.zhang, env.pfSpace, salary); !got.Has(model.PermUpload) {
+		t.Errorf("被单独授权的人应当能进，实际 %s", got)
+	}
+	if got := env.effective(t, env.zhang, env.pfSpace, detail); !got.Has(model.PermUpload) {
+		t.Errorf("隔离目录内部的授权应继续向下继承，实际 %s", got)
+	}
+	// 同部门的其他人依旧进不来。
+	li := *env.li
+	li.DeptID = env.pfDept.ID
+	if got := env.effective(t, &li, env.pfSpace, salary); got != model.PermNone {
+		t.Errorf("未被单独授权的同部门成员不应进入，实际 %s", got)
+	}
+
+	// 恢复继承后一切照旧。
+	if err := env.acl.SetInheritance(salary, true); err != nil {
+		t.Fatalf("恢复继承失败: %v", err)
+	}
+	if got := env.effective(t, &li, env.pfSpace, salary); !got.Has(model.PermView) {
+		t.Errorf("恢复继承后应重新拿到部门授权，实际 %s", got)
+	}
+}
+
+func TestIsolatedDirectoryHidesInheritedRuleList(t *testing.T) {
+	env := newTestEnv(t)
+	env.grant(t, &model.AccessRule{
+		SpaceID: env.pfSpace.ID, PrincipalType: model.PrincipalDept,
+		PrincipalID: env.pfDept.ID, Allow: model.PermCollaborate,
+		IncludeSubDept: true, Inheritable: true,
+	})
+	dir := env.mkNode(t, env.pfSpace, nil, "薪酬")
+
+	inherited, err := env.acl.ListInheritedRules(env.pfSpace.ID, dir)
+	if err != nil {
+		t.Fatalf("查询继承规则失败: %v", err)
+	}
+	if len(inherited) == 0 {
+		t.Fatalf("前置条件失败：应当能看到继承来的规则")
+	}
+
+	if err := env.acl.SetInheritance(dir, false); err != nil {
+		t.Fatalf("切断继承失败: %v", err)
+	}
+	inherited, err = env.acl.ListInheritedRules(env.pfSpace.ID, dir)
+	if err != nil {
+		t.Fatalf("查询继承规则失败: %v", err)
+	}
+	// 界面上不该再列一堆其实不生效的规则误导管理员。
+	if len(inherited) != 0 {
+		t.Errorf("切断继承后不应再列出继承规则，实际 %d 条", len(inherited))
+	}
+}
+
+func TestEffectiveForChildrenRespectsIsolation(t *testing.T) {
+	env := newTestEnv(t)
+	env.grant(t, &model.AccessRule{
+		SpaceID: env.pfSpace.ID, PrincipalType: model.PrincipalDept,
+		PrincipalID: env.pfDept.ID, Allow: model.PermCollaborate,
+		IncludeSubDept: true, Inheritable: true,
+	})
+	open := env.mkNode(t, env.pfSpace, nil, "公开")
+	sealed := env.mkNode(t, env.pfSpace, nil, "隔离")
+	if err := env.acl.SetInheritance(sealed, false); err != nil {
+		t.Fatalf("切断继承失败: %v", err)
+	}
+
+	subj := env.subject(t, env.zhang)
+	parentPerm, err := env.acl.Effective(subj, env.pfSpace, nil)
+	if err != nil {
+		t.Fatalf("计算根目录权限失败: %v", err)
+	}
+	// 重新读一次，拿到写库后的 acl_isolated 值。
+	var rows []model.Node
+	if err := env.db.Where("id IN ?", []uint64{open.ID, sealed.ID}).Find(&rows).Error; err != nil {
+		t.Fatalf("加载子节点失败: %v", err)
+	}
+	got, err := env.acl.EffectiveForChildren(subj, env.pfSpace, parentPerm, rows)
+	if err != nil {
+		t.Fatalf("批量计算失败: %v", err)
+	}
+	if !got[open.ID].Has(model.PermView) {
+		t.Errorf("普通子目录应继承父级权限，实际 %s", got[open.ID])
+	}
+	if got[sealed.ID] != model.PermNone {
+		t.Errorf("隔离子目录不应继承父级权限，实际 %s", got[sealed.ID])
+	}
+	// 批量结果必须与逐个计算一致，否则列表里会出现"看得见点不开"。
+	for _, n := range rows {
+		want := env.effective(t, env.zhang, env.pfSpace, &n)
+		if got[n.ID] != want {
+			t.Errorf("节点 %s 批量 %s 与逐个 %s 不一致", n.Name, got[n.ID], want)
+		}
+	}
+}
+
 func TestExpiredRuleIsIgnored(t *testing.T) {
 	env := newTestEnv(t)
 	past := time.Now().Add(-time.Hour)

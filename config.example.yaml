@@ -1,0 +1,80 @@
+# 乐云企业网盘配置示例
+#
+# 所有项都有默认值，整份文件删掉也能启动。
+# 每一项都可以用 LEYUN_* 环境变量覆盖，容器化部署更常用环境变量。
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  # release / debug
+  mode: release
+  shutdown_timeout: 10s
+  # 前后端分离部署时在这里列出前端域名；同源部署留空即可。
+  allow_origins: []
+
+database:
+  # sqlite / mysql / postgres
+  driver: sqlite
+  # SQLite:     data/leyun.db
+  # MySQL:      user:pass@tcp(127.0.0.1:3306)/leyun?charset=utf8mb4&parseTime=True&loc=Local
+  # PostgreSQL: host=127.0.0.1 user=leyun password=pass dbname=leyun port=5432 sslmode=disable
+  dsn: data/leyun.db
+  slow_threshold: 500ms
+  max_open_conns: 50
+  max_idle_conns: 10
+
+storage:
+  # 去重后的文件内容存放目录
+  root: data/blobs
+  # 分片上传的临时目录
+  temp_root: data/tmp
+  # 前端按此大小切片，8MB 对内网千兆是个稳妥值
+  chunk_size: 8388608
+  # 单文件上限，0 表示不限制
+  max_upload_size: 0
+  # 分片会话有效期，超时后由后台任务清理
+  upload_session_ttl: 24h
+  # 回收站保留时长
+  trash_retention: 720h
+
+jwt:
+  # 留空则自动生成并存入数据库，重启后登录态不会失效
+  secret: ""
+  issuer: leyun
+  expire: 12h
+  refresh: 168h
+
+security:
+  # 首次初始化时写入的超级管理员账号。
+  # 这是系统中唯一可以开通其他账号的角色——乐云不提供自助注册。
+  default_admin_username: admin
+  default_admin_password: admin
+  # 打开后，仍在使用初始口令的账号除改密外调不通任何接口
+  force_change_default_password: false
+  password_min_length: 5
+  # 连续登录失败上限，达到后锁定一段时间；0 表示不锁
+  max_login_failures: 10
+  login_lock_duration: 15m
+  # 新账号 / 新部门的默认配额（字节），0 表示不限
+  default_user_quota: 10737418240
+  default_dept_quota: 107374182400
+
+office:
+  # Office 在线编辑，需要配合 ONLYOFFICE Document Server
+  enabled: false
+  # 浏览器加载编辑器用的地址，必须是最终用户能打开的
+  public_url: "http://localhost:8081"
+  # 后端回连文档服务器的地址；容器内网部署填服务名，单机可留空复用 public_url
+  internal_url: ""
+  # 文档服务器回调乐云的地址；留空则按请求 Host 推断
+  callback_base: ""
+  # 必须与 Document Server 的 JWT_SECRET 一致
+  jwt_secret: ""
+  token_ttl: 12h
+  lang: zh-CN
+
+log:
+  # debug / info / warn / error
+  level: info
+  # text / json
+  format: text
