@@ -42,6 +42,34 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 	v1.GET("/office/content", h.OfficeContent)
 	v1.POST("/office/callback", h.OfficeCallback)
 
+	// ---- 开放接口：给外部 AI Agent / 索引程序用 ----
+	//
+	// 只认 API 密钥，不接受用户登录态：这套接口的能力由密钥的 scope 显式限定，
+	// 允许拿浏览器里的 token 直接调，等于把这层限制绕过去了。
+	ai := v1.Group("/ai", middleware.APIKeyAuth(svc.APIKey))
+	{
+		ai.GET("/whoami", h.AIWhoami)
+
+		index := ai.Group("", middleware.RequireScope(service.ScopeIndexRead))
+		{
+			index.GET("/spaces", h.AISpaces)
+			index.GET("/documents", h.AIDocuments)
+			index.GET("/documents/:id", h.AIDocument)
+			index.GET("/deletions", h.AIDeletions)
+		}
+
+		// 读内容是最重的一项能力：建全量索引就意味着能读到授权范围内的全部文件。
+		content := ai.Group("", middleware.RequireScope(service.ScopeContentRead))
+		{
+			content.GET("/documents/:id/content", h.AIDocumentContent)
+			content.GET("/blobs/:hash/content", h.AIBlobContent)
+		}
+
+		// 查询侧只需要这一项——它读不到任何文件内容。
+		ai.POST("/authorize", middleware.RequireScope(service.ScopeACLCheck), h.AIAuthorize)
+		ai.GET("/users/:id", middleware.RequireScope(service.ScopeUserRead), h.AIUser)
+	}
+
 	// 分享：登录与否都可访问，登录态用于判定内部分享的可见范围。
 	share := v1.Group("/share", optional)
 	{
@@ -141,6 +169,12 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 		admin.PUT("/spaces/:id", superAdmin, h.UpdateSpace)
 		admin.GET("/settings", superAdmin, h.GetSettings)
 		admin.PUT("/settings", superAdmin, h.UpdateSettings)
+
+		// API 密钥等同于一把能读全公司文件的钥匙，只许超管签发与吊销。
+		admin.GET("/api-keys", superAdmin, h.ListAPIKeys)
+		admin.POST("/api-keys", superAdmin, h.CreateAPIKey)
+		admin.POST("/api-keys/:id/status", superAdmin, h.SetAPIKeyStatus)
+		admin.DELETE("/api-keys/:id", superAdmin, h.DeleteAPIKey)
 	}
 
 	mountFrontend(r)

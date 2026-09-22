@@ -194,7 +194,9 @@ type Node struct {
 	CreatedBy     uint64    `gorm:"index;not null;default:0" json:"created_by"`
 	UpdatedBy     uint64    `gorm:"not null;default:0" json:"updated_by"`
 	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	// UpdatedAt 必须建索引：外部索引程序靠它做增量游标，
+	// 没有索引的话每次同步都是一次全表扫。
+	UpdatedAt time.Time `gorm:"index:idx_node_updated" json:"updated_at"`
 }
 
 // TableName 指定表名。
@@ -338,6 +340,60 @@ type AuditLog struct {
 // TableName 指定表名。
 func (AuditLog) TableName() string { return "ly_audit_log" }
 
+// APIKey 是给机器用的身份凭证，供外部 AI Agent、同步程序等调用开放接口。
+//
+// 与用户令牌的区别：用户令牌代表"某个人"，权限完全跟着 ACL 走；
+// API Key 代表"某个程序"，能力由 Scopes 显式列举，默认什么都做不了。
+type APIKey struct {
+	ID   uint64 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name string `gorm:"size:64;not null" json:"name"`
+	// Prefix 是密钥的前若干位明文，只用于在界面上认出是哪一把，不足以还原密钥。
+	Prefix string `gorm:"size:16;index;not null" json:"prefix"`
+	// KeyHash 是密钥的 SHA-256。
+	//
+	// 这里刻意不用 bcrypt：API Key 是高熵随机串，不存在被字典爆破的问题，
+	// 而每个请求都要验一次，bcrypt 那几十毫秒会直接压垮同步任务。
+	KeyHash string `gorm:"size:64;uniqueIndex;not null" json:"-"`
+	// Scopes 是逗号分隔的能力清单，见 service 层的 Scope* 常量。
+	Scopes string `gorm:"size:255;not null" json:"scopes"`
+	// SpaceIDs 是逗号分隔的空间白名单，为空表示不限空间。
+	// 想做"只读公共空间的知识库"，在这里限定即可。
+	SpaceIDs   string     `gorm:"size:512" json:"space_ids"`
+	Enabled    bool       `gorm:"not null" json:"enabled"`
+	ExpireAt   *time.Time `json:"expire_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	LastUsedIP string     `gorm:"size:64" json:"last_used_ip,omitempty"`
+	CreatedBy  uint64     `gorm:"index;not null;default:0" json:"created_by"`
+	Remark     string     `gorm:"size:255" json:"remark"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// TableName 指定表名。
+func (APIKey) TableName() string { return "ly_api_key" }
+
+// NodeTombstone 记录被彻底删除的节点。
+//
+// 增量同步靠 updated_at 游标就能覆盖新建、改名、移动、进出回收站——这些都会刷新
+// updated_at。唯独"彻底删除"是真的把行删掉，游标永远扫不到，
+// 外部索引里就会留下一条指向已不存在文件的幽灵数据。所以单独记一笔墓碑。
+type NodeTombstone struct {
+	// ID 自增，同时充当增量游标。
+	ID       uint64 `gorm:"primaryKey;autoIncrement" json:"seq"`
+	NodeID   uint64 `gorm:"index;not null" json:"node_id"`
+	SpaceID  uint64 `gorm:"index;not null" json:"space_id"`
+	BlobHash string `gorm:"size:64;index" json:"blob_hash,omitempty"`
+	Name     string `gorm:"size:255" json:"name"`
+	Path     string `gorm:"size:1024" json:"path"`
+	IsDir    bool   `gorm:"not null" json:"is_dir"`
+	// DeletedBy 为 0 表示由系统清理任务删除。
+	DeletedBy uint64    `gorm:"not null;default:0" json:"deleted_by"`
+	CreatedAt time.Time `gorm:"index" json:"deleted_at"`
+}
+
+// TableName 指定表名。
+func (NodeTombstone) TableName() string { return "ly_node_tombstone" }
+
 // Setting 是运行期可改的系统配置项（键值对）。
 //
 // 列名特意避开 key/value：二者在 MySQL 中是保留字，用原名会逼着每条 SQL 都加反引号，
@@ -357,6 +413,6 @@ func AllModels() []any {
 	return []any{
 		&Department{}, &User{}, &Space{}, &Node{}, &Blob{},
 		&AccessRule{}, &Share{}, &ShareTarget{}, &UploadSession{},
-		&AuditLog{}, &Setting{},
+		&AuditLog{}, &Setting{}, &APIKey{}, &NodeTombstone{},
 	}
 }

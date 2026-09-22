@@ -203,6 +203,15 @@ function onCommand(cmd: string) {
           <button
             v-if="store.isSuperAdmin"
             class="ly-nav-item"
+            :class="{ 'is-active': activeKey === 'admin-api-keys' }"
+            @click="router.push({ name: 'admin-api-keys' })"
+          >
+            <el-icon><Key /></el-icon>
+            <span v-show="!collapsed">API 密钥</span>
+          </button>
+          <button
+            v-if="store.isSuperAdmin"
+            class="ly-nav-item"
             :class="{ 'is-active': activeKey === 'admin-settings' }"
             @click="router.push({ name: 'admin-settings' })"
           >

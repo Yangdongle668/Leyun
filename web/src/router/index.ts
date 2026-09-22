@@ -82,6 +82,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '审计日志', admin: true },
       },
       {
+        path: 'admin/api-keys',
+        name: 'admin-api-keys',
+        component: () => import('@/views/admin/ApiKeysView.vue'),
+        meta: { title: 'API 密钥', superAdmin: true },
+      },
+      {
         path: 'admin/settings',
         name: 'admin-settings',
         component: () => import('@/views/admin/SettingsView.vue'),

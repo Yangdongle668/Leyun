@@ -1,5 +1,6 @@
 import { get, post, put, del, type PageBody } from './request'
 import type {
+  APIKey,
   AccessRule,
   AuditLog,
   DeptNode,
@@ -234,6 +235,21 @@ export const api = {
     page_size?: number
   }) => get<PageBody<AuditLog>>('/admin/audit-logs', params),
   auditActions: () => get<string[]>('/admin/audit-actions'),
+
+  apiKeys: () =>
+    get<{ list: APIKey[]; scopes: Array<{ code: string; label: string; desc: string }> }>(
+      '/admin/api-keys',
+    ),
+  createAPIKey: (data: {
+    name: string
+    scopes: string[]
+    space_ids?: number[]
+    expire_days?: number
+    remark?: string
+  }) => post<{ key: string; record: APIKey }>('/admin/api-keys', data),
+  setAPIKeyStatus: (id: number, enabled: boolean) =>
+    post(`/admin/api-keys/${id}/status`, { enabled }),
+  deleteAPIKey: (id: number) => del(`/admin/api-keys/${id}`),
 
   settings: () =>
     get<{

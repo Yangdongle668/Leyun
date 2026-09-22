@@ -1021,14 +1021,24 @@ func (s *FileService) purgeSubtree(tx *gorm.DB, root *model.Node) error {
 
 	var freed int64
 	ids := make([]uint64, 0, len(targets))
+	stones := make([]model.NodeTombstone, 0, len(targets))
 	for _, n := range targets {
 		ids = append(ids, n.ID)
+		// 这里是系统里唯一真正删除节点行的地方，所以墓碑只需要在这里写。
+		// 不留墓碑的话，外部索引程序靠 updated_at 游标永远发现不了这些文件没了。
+		stones = append(stones, model.NodeTombstone{
+			NodeID: n.ID, SpaceID: n.SpaceID, BlobHash: n.BlobHash,
+			Name: n.Name, Path: n.Path, IsDir: n.IsDir, DeletedBy: n.TrashedBy,
+		})
 		if !n.IsDir {
 			freed += n.Size
 			if err := s.releaseBlob(tx, n.BlobHash); err != nil {
 				return err
 			}
 		}
+	}
+	if err := tx.Create(&stones).Error; err != nil {
+		return fmt.Errorf("记录删除流水失败: %w", err)
 	}
 	if err := tx.Where("node_id IN ?", ids).Delete(&model.AccessRule{}).Error; err != nil {
 		return fmt.Errorf("清理节点权限失败: %w", err)

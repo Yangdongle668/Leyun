@@ -304,6 +304,156 @@ func (s *ACLService) EffectiveForChildren(subj *Subject, space *model.Space, par
 	return out, nil
 }
 
+// EffectiveBatch 批量计算主体对一批节点（可跨空间）的最终权限。
+//
+// 逐个调 Effective 会产生 2N 次查询——知识库一次检索就要判几十上百个节点，
+// 那样根本跑不动。这里把祖先链、权限规则、继承开关各拉一次，剩下全在内存里算，
+// 查询次数与节点数量无关。
+//
+// 判定口径必须与 Effective 完全一致，否则会出现"检索说能看、点开却打不开"。
+func (s *ACLService) EffectiveBatch(subj *Subject, nodes []model.Node) (map[uint64]model.Permission, error) {
+	out := make(map[uint64]model.Permission, len(nodes))
+	if subj == nil || subj.User == nil || len(nodes) == 0 {
+		return out, nil
+	}
+	if subj.IsSuperAdmin() {
+		for _, n := range nodes {
+			out[n.ID] = model.PermAll
+		}
+		return out, nil
+	}
+
+	// 1. 涉及的空间。
+	spaceIDSet := map[uint64]struct{}{}
+	for _, n := range nodes {
+		spaceIDSet[n.SpaceID] = struct{}{}
+	}
+	spaceIDs := keysOf(spaceIDSet)
+	var spaceRows []model.Space
+	if err := s.db.Where("id IN ?", spaceIDs).Find(&spaceRows).Error; err != nil {
+		return nil, fmt.Errorf("加载空间失败: %w", err)
+	}
+	spaces := make(map[uint64]*model.Space, len(spaceRows))
+	for i := range spaceRows {
+		spaces[spaceRows[i].ID] = &spaceRows[i]
+	}
+
+	// 2. 部门管理员的管辖判定：一次把涉及的部门路径取回来。
+	managedSpaces := map[uint64]bool{}
+	if subj.ManagedDeptPath != "" {
+		deptIDs := make([]uint64, 0, len(spaceRows))
+		for _, sp := range spaceRows {
+			if sp.Type == model.SpaceDepartment && sp.DeptID > 0 {
+				deptIDs = append(deptIDs, sp.DeptID)
+			}
+		}
+		if len(deptIDs) > 0 {
+			var depts []model.Department
+			if err := s.db.Select("id", "path").Where("id IN ?", deptIDs).Find(&depts).Error; err != nil {
+				return nil, fmt.Errorf("加载部门失败: %w", err)
+			}
+			paths := make(map[uint64]string, len(depts))
+			for _, d := range depts {
+				paths[d.ID] = d.Path
+			}
+			for _, sp := range spaceRows {
+				if p, ok := paths[sp.DeptID]; ok && treex.IsDescendant(p, subj.ManagedDeptPath) {
+					managedSpaces[sp.ID] = true
+				}
+			}
+		}
+	}
+
+	// 3. 祖先链上的全部节点 ID——既用来取规则，也用来查谁切断了继承。
+	ancestorSet := map[uint64]struct{}{}
+	for _, n := range nodes {
+		for _, id := range treex.IDs(n.Path) {
+			ancestorSet[id] = struct{}{}
+		}
+	}
+	isolated := map[uint64]bool{}
+	if len(ancestorSet) > 0 {
+		var chain []model.Node
+		err := s.db.Select("id", "acl_isolated").Where("id IN ?", keysOf(ancestorSet)).Find(&chain).Error
+		if err != nil {
+			return nil, fmt.Errorf("加载目录继承设置失败: %w", err)
+		}
+		for _, n := range chain {
+			isolated[n.ID] = n.ACLIsolated
+		}
+	}
+
+	// 4. 一次取回所有可能用到的规则，按 (空间, 节点) 归档。
+	ruleNodeIDs := append(keysOf(ancestorSet), 0)
+	var rules []model.AccessRule
+	err := s.db.Where("space_id IN ? AND node_id IN ?", spaceIDs, ruleNodeIDs).Find(&rules).Error
+	if err != nil {
+		return nil, fmt.Errorf("加载权限规则失败: %w", err)
+	}
+	type ruleKey struct{ space, node uint64 }
+	byKey := map[ruleKey][]*model.AccessRule{}
+	for i := range rules {
+		r := &rules[i]
+		k := ruleKey{r.SpaceID, r.NodeID}
+		byKey[k] = append(byKey[k], r)
+	}
+
+	now := time.Now()
+	for _, n := range nodes {
+		space := spaces[n.SpaceID]
+		switch {
+		case space == nil, !space.Enabled:
+			out[n.ID] = model.PermNone
+			continue
+		case space.Type == model.SpacePersonal && space.OwnerID == subj.User.ID:
+			out[n.ID] = model.PermAll
+			continue
+		case managedSpaces[space.ID]:
+			out[n.ID] = model.PermAll
+			continue
+		}
+
+		// 收集范围：自身往上走，遇到切断继承的目录就停，否则一直到空间根。
+		chainIDs := treex.IDs(n.Path)
+		scope := make([]uint64, 0, len(chainIDs)+1)
+		stopped := false
+		for i := len(chainIDs) - 1; i >= 0; i-- {
+			scope = append(scope, chainIDs[i])
+			if isolated[chainIDs[i]] {
+				stopped = true
+				break
+			}
+		}
+		if !stopped {
+			scope = append(scope, 0)
+		}
+
+		var allow, deny model.Permission
+		for _, nodeID := range scope {
+			for _, rule := range byKey[ruleKey{space.ID, nodeID}] {
+				if !applicable(rule, n.ID, now) {
+					continue
+				}
+				if !subj.matchesPrincipal(rule) {
+					continue
+				}
+				allow |= rule.Allow
+				deny |= rule.Deny
+			}
+		}
+		out[n.ID] = (allow &^ deny).Normalize() &^ deny
+	}
+	return out, nil
+}
+
+func keysOf(set map[uint64]struct{}) []uint64 {
+	out := make([]uint64, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	return out
+}
+
 // Require 校验权限，不足时返回带中文提示的 403。
 func (s *ACLService) Require(subj *Subject, space *model.Space, node *model.Node, want model.Permission) (model.Permission, error) {
 	got, err := s.Effective(subj, space, node)

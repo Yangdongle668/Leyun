@@ -163,6 +163,22 @@ export interface Share {
   creator?: string
 }
 
+export interface APIKey {
+  id: number
+  name: string
+  /** 密钥前若干位明文，只用于在列表里认出是哪一把。 */
+  prefix: string
+  scopes: string
+  space_ids: string
+  enabled: boolean
+  expire_at?: string
+  last_used_at?: string
+  last_used_ip?: string
+  created_by: number
+  remark: string
+  created_at: string
+}
+
 export interface AuditLog {
   id: number
   user_id: number

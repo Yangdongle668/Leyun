@@ -27,6 +27,8 @@ type Registry struct {
 	Auth    *AuthService
 	Stats   *StatsService
 	Office  *OfficeService
+	APIKey  *APIKeyService
+	AI      *AIService
 }
 
 // NewRegistry 组装全部服务。
@@ -43,11 +45,14 @@ func NewRegistry(db *gorm.DB, cfg *config.Config, store *storage.Store, jwtMgr *
 	auth := NewAuthService(db, cfg, jwtMgr, audit)
 	stats := NewStatsService(db, store)
 	office := NewOfficeService(cfg, jwtMgr, file, acl, space, audit)
+	apiKey := NewAPIKeyService(db)
+	ai := NewAIService(db, acl, file, space, user)
 
 	return &Registry{
 		DB: db, Cfg: cfg, Store: store, JWT: jwtMgr,
 		ACL: acl, Dept: dept, User: user, Space: space, File: file,
 		Upload: upload, Share: share, Audit: audit, Setting: setting,
 		Auth: auth, Stats: stats, Office: office,
+		APIKey: apiKey, AI: ai,
 	}
 }
