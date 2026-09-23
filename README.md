@@ -10,7 +10,7 @@
 ┌──────────────────────────────────────────────┐
 │  一键部署                                     │
 │                                              │
-│      git clone https://github.com/Yangdongle668/Leyun && cd Leyun        │
+│      git clone [<仓库地址>]                   │
 │      ./deploy.sh                             │
 │                                              │
 │  默认账号 admin / admin —— 登录后请立即修改   │
@@ -121,7 +121,7 @@
 ### 部署
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/Yangdongle668/Leyun
 cd Leyun
 ./deploy.sh
 ```
