@@ -45,7 +45,13 @@ const maxDeptUsage = computed(() =>
     <div class="ly-page-head">
       <div>
         <h1 class="ly-page-title">概览</h1>
-        <p class="ly-page-desc">系统整体使用情况。</p>
+        <!--
+          部门管理员看到的是自己管辖子树的口径，不是全公司。
+          不写明白的话，他会把本部门的人数当成公司总人数。
+        -->
+        <p class="ly-page-desc">
+          {{ data?.scoped ? '你管辖部门范围内的使用情况。' : '系统整体使用情况。' }}
+        </p>
       </div>
       <el-button :icon="'Refresh'" @click="load">刷新</el-button>
     </div>
@@ -68,7 +74,22 @@ const maxDeptUsage = computed(() =>
       <!-- 存储 -->
       <section class="ly-card ly-card-pad">
         <h3 class="ly-section-title">存储用量</h3>
-        <div v-if="data" class="ly-storage">
+        <!--
+          物理占用和去重节省是整个系统的属性——文件内容是全局去重的，
+          没法拆到某个部门头上。所以只对超管展示完整那一版；
+          部门管理员只给"本范围逻辑用量"，不硬算一个会误导人的数字。
+        -->
+        <div v-if="data?.scoped" class="ly-storage">
+          <div class="ly-storage-main">
+            <span class="ly-storage-num">{{ data.logical_text }}</span>
+            <span class="ly-muted">本范围文件总量</span>
+          </div>
+          <p class="ly-storage-note">
+            磁盘实际占用与去重节省是全系统口径（相同内容只存一份，无法按部门拆分），
+            需要查看请联系超级管理员。
+          </p>
+        </div>
+        <div v-else-if="data" class="ly-storage">
           <div class="ly-storage-main">
             <span class="ly-storage-num">{{ data.stored_text }}</span>
             <span class="ly-muted">实际占用磁盘</span>

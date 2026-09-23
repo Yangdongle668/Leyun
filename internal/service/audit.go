@@ -97,6 +97,10 @@ type AuditQuery struct {
 	To       string
 	Page     int
 	PageSize int
+	// ScopeDeptIDs 限定只看这些部门的人产生的记录。
+	// nil 表示不限（超级管理员）；部门管理员必须带上自己的管辖子树，
+	// 否则他能翻到全公司谁动过哪个文件。
+	ScopeDeptIDs []uint64
 }
 
 // List 分页查询审计日志。
@@ -113,6 +117,12 @@ func (s *AuditService) List(q AuditQuery) ([]model.AuditLog, int64, error) {
 	}
 	if q.DeptID > 0 {
 		tx = tx.Where("dept_id = ?", q.DeptID)
+	}
+	if q.ScopeDeptIDs != nil {
+		if len(q.ScopeDeptIDs) == 0 {
+			return nil, 0, nil
+		}
+		tx = tx.Where("dept_id IN ?", q.ScopeDeptIDs)
 	}
 	if q.Success != nil {
 		tx = tx.Where("success = ?", *q.Success)

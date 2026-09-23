@@ -324,6 +324,8 @@ export interface Overview {
     used: number
     used_text: string
   }>
+  /** 为真表示这份数据只覆盖调用人管辖的子树，不是全公司。 */
+  scoped: boolean
 }
 
 export interface Profile {

@@ -40,6 +40,9 @@ type Overview struct {
 	TopSpaces     []SpaceUsage     `json:"top_spaces"`
 	RecentUploads int64            `json:"recent_uploads"`
 	DeptUsage     []DeptUsageBrief `json:"dept_usage"`
+	// Scoped 为真表示这份数据只覆盖调用人管辖的那棵子树，不是全公司。
+	// 界面据此标注口径，免得部门管理员把自己部门的数字当成全公司的。
+	Scoped bool `json:"scoped"`
 }
 
 // SpaceUsage 是单个空间的用量。
@@ -62,66 +65,129 @@ type DeptUsageBrief struct {
 }
 
 // Overview 计算概览数据。
-func (s *StatsService) Overview() (*Overview, error) {
-	out := &Overview{}
+// Overview 计算概览数据。
+//
+// scopeDeptIDs 限定统计口径：传 nil 表示不限（超级管理员），
+// 否则只统计这些部门及其下的内容。
+//
+// 不做这层限制的话，部门管理员打开概览页会看到全公司的人数、部门数、
+// 空间用量——包括**别人的个人空间**。那是隐私，也不是他该管的范围。
+func (s *StatsService) Overview(scopeDeptIDs []uint64) (*Overview, error) {
+	out := &Overview{Scoped: scopeDeptIDs != nil}
 
-	counts := []struct {
-		model any
-		where []any
-		dst   *int64
+	// 能统计哪些空间：管辖子树内的部门空间 + 公共空间。
+	// 个人空间一律排除——员工的私人区域不进管理概览，哪怕是自己的：
+	// 自己的用量在侧栏本来就看得到，放进"空间用量 Top"只会挤掉真正要看的。
+	var scopeSpaceIDs []uint64
+	if scopeDeptIDs != nil {
+		if len(scopeDeptIDs) == 0 {
+			return out, nil
+		}
+		err := s.db.Model(&model.Space{}).
+			Where("(type = ? AND dept_id IN ?) OR type = ?",
+				model.SpaceDepartment, scopeDeptIDs, model.SpacePublic).
+			Pluck("id", &scopeSpaceIDs).Error
+		if err != nil {
+			return nil, fmt.Errorf("查询可统计空间失败: %w", err)
+		}
+		if len(scopeSpaceIDs) == 0 {
+			// 一个空间都没有时给个不可能命中的值，避免 IN () 被当成无条件。
+			scopeSpaceIDs = []uint64{0}
+		}
+	}
+
+	// byDept / bySpace 给查询补上范围限制；不限范围时原样返回。
+	byDept := func(tx *gorm.DB) *gorm.DB {
+		if scopeDeptIDs == nil {
+			return tx
+		}
+		return tx.Where("dept_id IN ?", scopeDeptIDs)
+	}
+	bySpace := func(tx *gorm.DB) *gorm.DB {
+		if scopeSpaceIDs == nil {
+			return tx
+		}
+		return tx.Where("space_id IN ?", scopeSpaceIDs)
+	}
+
+	count := func(tx *gorm.DB, dst *int64) error {
+		if err := tx.Count(dst).Error; err != nil {
+			return fmt.Errorf("统计数据失败: %w", err)
+		}
+		return nil
+	}
+
+	u := func() *gorm.DB { return byDept(s.db.Model(&model.User{})) }
+	n := func() *gorm.DB { return bySpace(s.db.Model(&model.Node{})) }
+
+	deptTx := s.db.Model(&model.Department{})
+	spaceTx := s.db.Model(&model.Space{})
+	if scopeDeptIDs != nil {
+		deptTx = deptTx.Where("id IN ?", scopeDeptIDs)
+		spaceTx = spaceTx.Where("id IN ?", scopeSpaceIDs)
+	}
+
+	for _, step := range []struct {
+		tx  *gorm.DB
+		dst *int64
 	}{
-		{&model.User{}, nil, &out.UserTotal},
-		{&model.User{}, []any{"status = ?", model.UserActive}, &out.UserActive},
-		{&model.Department{}, nil, &out.DeptTotal},
-		{&model.Space{}, nil, &out.SpaceTotal},
-		{&model.Node{}, []any{"is_dir = ? AND trashed = ?", false, false}, &out.FileTotal},
-		{&model.Node{}, []any{"is_dir = ? AND trashed = ?", true, false}, &out.FolderTotal},
-		{&model.Node{}, []any{"trashed = ?", true}, &out.TrashTotal},
-		{&model.Share{}, []any{"revoked = ?", false}, &out.ShareTotal},
-	}
-	for _, c := range counts {
-		tx := s.db.Model(c.model)
-		if len(c.where) > 0 {
-			tx = tx.Where(c.where[0], c.where[1:]...)
-		}
-		if err := tx.Count(c.dst).Error; err != nil {
-			return nil, fmt.Errorf("统计数据失败: %w", err)
+		{u(), &out.UserTotal},
+		{u().Where("status = ?", model.UserActive), &out.UserActive},
+		{deptTx, &out.DeptTotal},
+		{spaceTx, &out.SpaceTotal},
+		{n().Where("is_dir = ? AND trashed = ?", false, false), &out.FileTotal},
+		{n().Where("is_dir = ? AND trashed = ?", true, false), &out.FolderTotal},
+		{n().Where("trashed = ?", true), &out.TrashTotal},
+		{bySpace(s.db.Model(&model.Share{})).Where("revoked = ?", false), &out.ShareTotal},
+	} {
+		if err := count(step.tx, step.dst); err != nil {
+			return nil, err
 		}
 	}
 
-	// 物理占用（去重后）与逻辑占用（各空间累加）的差值就是去重省下的空间。
-	var stored *int64
-	if err := s.db.Model(&model.Blob{}).Select("COALESCE(SUM(size), 0)").Scan(&stored).Error; err != nil {
-		return nil, fmt.Errorf("统计存储占用失败: %w", err)
-	}
-	if stored != nil {
-		out.StoredBytes = *stored
-	}
+	// 逻辑占用：范围内文件大小之和。
 	var logical *int64
-	if err := s.db.Model(&model.Node{}).Where("is_dir = ?", false).
+	if err := n().Where("is_dir = ?", false).
 		Select("COALESCE(SUM(size), 0)").Scan(&logical).Error; err != nil {
 		return nil, fmt.Errorf("统计逻辑容量失败: %w", err)
 	}
 	if logical != nil {
 		out.LogicalBytes = *logical
 	}
-	out.DedupSaved = out.LogicalBytes - out.StoredBytes
-	if out.DedupSaved < 0 {
-		out.DedupSaved = 0
-	}
-	out.StoredText = HumanSize(out.StoredBytes)
 	out.LogicalText = HumanSize(out.LogicalBytes)
-	out.DedupText = HumanSize(out.DedupSaved)
+
+	// 物理占用和去重节省是**整个系统**的属性：blob 是全局去重的，
+	// 没法拆到某个部门头上。所以只报给超管，部门管理员这两项留空，
+	// 界面上不显示——给个按自己范围硬算的数字反而是误导。
+	if scopeDeptIDs == nil {
+		var stored *int64
+		if err := s.db.Model(&model.Blob{}).Select("COALESCE(SUM(size), 0)").Scan(&stored).Error; err != nil {
+			return nil, fmt.Errorf("统计存储占用失败: %w", err)
+		}
+		if stored != nil {
+			out.StoredBytes = *stored
+		}
+		out.DedupSaved = out.LogicalBytes - out.StoredBytes
+		if out.DedupSaved < 0 {
+			out.DedupSaved = 0
+		}
+		out.StoredText = HumanSize(out.StoredBytes)
+		out.DedupText = HumanSize(out.DedupSaved)
+	}
 
 	since := time.Now().Add(-7 * 24 * time.Hour)
-	if err := s.db.Model(&model.Node{}).
-		Where("is_dir = ? AND created_at >= ?", false, since).
-		Count(&out.RecentUploads).Error; err != nil {
-		return nil, fmt.Errorf("统计近期上传失败: %w", err)
+	if err := count(n().Where("is_dir = ? AND created_at >= ?", false, since), &out.RecentUploads); err != nil {
+		return nil, err
 	}
 
+	// 空间用量 Top：受范围限制时只有部门空间和公共空间，
+	// 个人空间已经在上面算 scopeSpaceIDs 时排除掉了。
 	var spaces []model.Space
-	if err := s.db.Order("used_bytes desc").Limit(8).Find(&spaces).Error; err != nil {
+	topTx := s.db.Order("used_bytes desc").Limit(8)
+	if scopeSpaceIDs != nil {
+		topTx = topTx.Where("id IN ?", scopeSpaceIDs)
+	}
+	if err := topTx.Find(&spaces).Error; err != nil {
 		return nil, fmt.Errorf("查询空间用量失败: %w", err)
 	}
 	for _, sp := range spaces {
@@ -131,7 +197,7 @@ func (s *StatsService) Overview() (*Overview, error) {
 		})
 	}
 
-	deptUsage, err := s.deptUsage()
+	deptUsage, err := s.deptUsage(scopeDeptIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +205,16 @@ func (s *StatsService) Overview() (*Overview, error) {
 	return out, nil
 }
 
-func (s *StatsService) deptUsage() ([]DeptUsageBrief, error) {
+func (s *StatsService) deptUsage(scopeDeptIDs []uint64) ([]DeptUsageBrief, error) {
 	var depts []model.Department
-	if err := s.db.Order("depth asc, sort asc").Limit(50).Find(&depts).Error; err != nil {
+	tx := s.db.Order("depth asc, sort asc").Limit(50)
+	if scopeDeptIDs != nil {
+		if len(scopeDeptIDs) == 0 {
+			return nil, nil
+		}
+		tx = tx.Where("id IN ?", scopeDeptIDs)
+	}
+	if err := tx.Find(&depts).Error; err != nil {
 		return nil, fmt.Errorf("查询部门失败: %w", err)
 	}
 	if len(depts) == 0 {

@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"slices"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/Yangdongle668/Leyun/internal/model"
 	"github.com/Yangdongle668/Leyun/internal/pkg/response"
+	"github.com/Yangdongle668/Leyun/internal/pkg/treex"
 	"github.com/Yangdongle668/Leyun/internal/service"
 	"github.com/Yangdongle668/Leyun/internal/store"
 )
@@ -76,9 +79,21 @@ func (h *Handler) GetUser(c *gin.Context) {
 	if !ok {
 		return
 	}
+	subj, ok := h.subject(c)
+	if !ok {
+		return
+	}
 	u, err := h.svc.User.Get(id)
 	if err != nil {
 		response.Fail(c, err)
+		return
+	}
+	// 只校验列表接口是不够的：这里按 id 直接取，不挡住的话
+	// 部门管理员挨个试 id 就能把全公司的人（含超管）的资料翻出来。
+	if scope, ok2 := h.adminDeptScope(c, subj); !ok2 {
+		return
+	} else if scope != nil && !slices.Contains(scope, u.DeptID) {
+		response.Fail(c, response.Forbidden("该账号不在你的管辖范围内"))
 		return
 	}
 	view, err := h.svc.User.DecorateOne(u)
@@ -291,6 +306,17 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		v := raw == "true" || raw == "1"
 		q.Success = &v
 	}
+	// 部门管理员只能看自己管辖子树内的人做的事。
+	subj, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.adminDeptScope(c, subj)
+	if !ok {
+		return
+	}
+	q.ScopeDeptIDs = scope
+
 	list, total, err := h.svc.Audit.List(q)
 	if err != nil {
 		response.Fail(c, err)
@@ -310,13 +336,45 @@ func (h *Handler) AuditActions(c *gin.Context) {
 }
 
 // Overview 返回管理后台概览。
+//
+// 部门管理员只看自己管辖的那棵子树。不限制的话，概览页会把全公司的
+// 人数、部门数、空间用量都摊开——其中还包括别人的个人空间。
 func (h *Handler) Overview(c *gin.Context) {
-	data, err := h.svc.Stats.Overview()
+	subj, ok := h.subject(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.adminDeptScope(c, subj)
+	if !ok {
+		return
+	}
+	data, err := h.svc.Stats.Overview(scope)
 	if err != nil {
 		response.Fail(c, err)
 		return
 	}
 	response.OK(c, data)
+}
+
+// adminDeptScope 算出调用人在管理后台能看到的部门范围。
+//
+// 超级管理员返回 nil（不限）；部门管理员返回他管辖子树的部门 ID。
+// 两者都不是的话直接回 403——能走到这里说明路由上的 anyAdmin 放行了，
+// 但没有管辖范围的"管理员"不应该看到任何人的数据。
+func (h *Handler) adminDeptScope(c *gin.Context, subj *service.Subject) ([]uint64, bool) {
+	if subj.IsSuperAdmin() {
+		return nil, true
+	}
+	if subj.ManagedDeptPath == "" {
+		response.Fail(c, response.Forbidden("没有可管理的部门"))
+		return nil, false
+	}
+	ids, err := h.svc.Dept.SubtreeIDs(treex.SelfID(subj.ManagedDeptPath))
+	if err != nil {
+		response.Fail(c, err)
+		return nil, false
+	}
+	return ids, true
 }
 
 // ===== 系统设置 =====
