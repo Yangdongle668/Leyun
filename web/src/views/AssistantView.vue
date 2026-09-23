@@ -7,6 +7,7 @@ import { ChatLineRound, Delete, Plus, Promotion, Document } from '@element-plus/
 import { api, type KBCitation, type KBConversation } from '@/api'
 import { askKB } from '@/api/kbstream'
 import { useUserStore } from '@/stores/user'
+import { renderMarkdown } from '@/utils/markdown'
 
 /** 界面上的一条消息。 */
 interface Turn {
@@ -284,7 +285,18 @@ watch(turns, scrollToBottom, { deep: true })
                   {{ t.status }}
                 </span>
               </template>
-              <span v-if="t.content" class="ly-kb-text">{{ t.content }}</span>
+              <!--
+                模型的回答是 Markdown。这里过的是 marked 解析 + DOMPurify 消毒，
+                见 utils/markdown.ts——内容来自员工上传的文档，属于不可信输入，
+                直接 v-html 会变成一个打到全公司的 XSS。
+                提问那一侧仍然按纯文本显示，用户自己打的字没必要当富文本解析。
+              -->
+              <div
+                v-if="t.content && t.role === 'assistant'"
+                class="ly-kb-text ly-md"
+                v-html="renderMarkdown(t.content)"
+              ></div>
+              <span v-else-if="t.content" class="ly-kb-text">{{ t.content }}</span>
               <span v-if="t.streaming && t.content" class="ly-kb-caret" />
 
               <div v-if="t.citations.length" class="ly-kb-cites">
@@ -455,6 +467,110 @@ watch(turns, scrollToBottom, { deep: true })
 .ly-kb-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/*
+ * Markdown 渲染出来的排版。
+ *
+ * 注意 .ly-md 要把 pre-wrap 关掉：Markdown 已经生成了 <p> <li> 这些块级元素，
+ * 再叠一层 pre-wrap 的话，源文本里的换行会变成多余的空行，整段被撑开。
+ *
+ * 这些样式加了 :deep()——内容是 v-html 塞进去的，不带组件的 scoped 属性，
+ * 不穿透的话一条都命中不了。
+ */
+.ly-md {
+  white-space: normal;
+  line-height: 1.75;
+}
+.ly-md :deep(p) {
+  margin: 0 0 8px;
+}
+.ly-md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.ly-md :deep(strong) {
+  font-weight: 600;
+}
+.ly-md :deep(ul),
+.ly-md :deep(ol) {
+  margin: 6px 0 10px;
+  padding-left: 22px;
+}
+.ly-md :deep(li) {
+  margin: 3px 0;
+}
+.ly-md :deep(li > p) {
+  margin: 0;
+}
+.ly-md :deep(h1),
+.ly-md :deep(h2),
+.ly-md :deep(h3),
+.ly-md :deep(h4) {
+  margin: 14px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.ly-md :deep(h1:first-child),
+.ly-md :deep(h2:first-child),
+.ly-md :deep(h3:first-child) {
+  margin-top: 0;
+}
+.ly-md :deep(code) {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ly-surface-sunken);
+  font-family: var(--ly-font-mono);
+  font-size: 0.92em;
+}
+.ly-md :deep(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ly-surface-sunken);
+  overflow-x: auto;
+}
+.ly-md :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+.ly-md :deep(blockquote) {
+  margin: 8px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--ly-border);
+  color: var(--ly-text-secondary);
+}
+/* 规格参数这类回答经常是表格，得能横向滚动而不是把气泡撑破 */
+.ly-md :deep(table) {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ly-md :deep(th),
+.ly-md :deep(td) {
+  padding: 6px 10px;
+  border: 1px solid var(--ly-border);
+  text-align: left;
+}
+.ly-md :deep(th) {
+  background: var(--ly-surface-sunken);
+  font-weight: 600;
+}
+.ly-md :deep(hr) {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--ly-border);
+}
+.ly-md :deep(a) {
+  color: var(--ly-primary);
+  text-decoration: none;
+}
+.ly-md :deep(a:hover) {
+  text-decoration: underline;
 }
 .ly-kb-status {
   display: inline-flex;
