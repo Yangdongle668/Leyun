@@ -10,8 +10,11 @@
 # 构建产物
 /bin/
 /dist/
-leyun
-leyun.exe
+# 必须带开头的斜杠。不带斜杠的模式在 git 里是"任意层级都匹配"，
+# 写成 leyun 会连 cmd/leyun/ 这个目录一起忽略掉，
+# 结果就是入口文件 main.go 根本进不了仓库——别人 clone 下来编译不了。
+/leyun
+/leyun.exe
 
 # 前端构建产物（由 make web / Docker 构建阶段生成）
 /web/dist/

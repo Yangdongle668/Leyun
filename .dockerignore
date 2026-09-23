@@ -7,12 +7,15 @@ config.yaml
 .env
 
 # 构建产物
-bin/
-dist/
-leyun
-leyun.exe
-internal/web/dist/assets/
-internal/web/dist/index.html
+# 一律带开头的斜杠，明确只指根目录那一个。
+# 写成 leyun 容易让人以为连 cmd/leyun/ 也一起排掉了（.gitignore 里确实会），
+# 加个斜杠把意图写死，省得下次有人照着改错。
+/bin/
+/dist/
+/leyun
+/leyun.exe
+/internal/web/dist/assets/
+/internal/web/dist/index.html
 
 # 依赖与缓存
 web/node_modules/
