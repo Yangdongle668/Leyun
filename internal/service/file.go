@@ -103,7 +103,21 @@ func (s *FileService) List(subj *Subject, spaceID, parentID uint64, keyword, ord
 
 	parentPerm, err := s.acl.Require(subj, space, parent, model.PermView)
 	if err != nil {
-		return nil, err
+		// 这一层本身没权限，但下面可能挂着给他的授权（跨部门常见做法：
+		// 只开放某一个子目录）。一律拒掉的话，他从侧栏点进来必然 403，
+		// 而那个子目录明明是特意开给他的。
+		//
+		// 所以退一步：这一层按"零权限"处理放行，具体每个子项能不能看
+		// 仍旧由下面的 EffectiveForChildren 逐个算——放行不等于给权限，
+		// 没权限的子项照样不会出现在列表里。
+		reachable, rErr := s.acl.CanReachInside(subj, space, parent)
+		if rErr != nil {
+			return nil, rErr
+		}
+		if !reachable {
+			return nil, err
+		}
+		parentPerm = model.PermNone
 	}
 
 	tx := s.db.Model(&model.Node{}).Where("space_id = ? AND trashed = ?", spaceID, false)

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -495,7 +496,18 @@ func (s *ACLService) AccessibleSpaceIDs(subj *Subject) ([]uint64, error) {
 		Where("allow <> 0").
 		Where("expire_at IS NULL OR expire_at > ?", time.Now())
 
-	// 组装"命中当前主体"的 SQL 条件，避免把全表规则拉回内存过滤。
+	var ids []uint64
+	if err := q.Where(s.principalCond(subj)).Pluck("space_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("查询可访问空间失败: %w", err)
+	}
+	return ids, nil
+}
+
+// principalCond 拼出"这条规则命中当前主体"的 SQL 条件。
+//
+// 放在 SQL 里而不是拉回内存过滤：规则表会随着授权越积越多，
+// 每次列目录都全表扫一遍不划算。
+func (s *ACLService) principalCond(subj *Subject) *gorm.DB {
 	cond := s.db.Where("principal_type = ?", model.PrincipalEveryone)
 	cond = cond.Or(s.db.Where("principal_type = ? AND principal_role = ?", model.PrincipalRole, subj.User.Role))
 	cond = cond.Or(s.db.Where("principal_type = ? AND principal_id = ?", model.PrincipalUser, subj.User.ID))
@@ -506,12 +518,54 @@ func (s *ACLService) AccessibleSpaceIDs(subj *Subject) ([]uint64, error) {
 		cond = cond.Or(s.db.Where("principal_type = ? AND include_sub_dept = ? AND principal_id IN ?",
 			model.PrincipalDept, true, subj.AncestorDeptIDs))
 	}
+	return cond
+}
 
-	var ids []uint64
-	if err := q.Where(cond).Pluck("space_id", &ids).Error; err != nil {
-		return nil, fmt.Errorf("查询可访问空间失败: %w", err)
+// CanReachInside 判断主体在 parent 底下（不含 parent 自身）是否还有够得着的东西。
+//
+// 用来解决"有权限却没有入口"：工程部把某个子目录授权给市场部时，
+// 市场部的人在工程部**空间根**上是没有任何权限的。只看根的话，这个空间
+// 不会出现在侧栏，被授权的那个目录就永远点不到——权限给了等于没给。
+//
+// parent 传 nil 表示问的是整个空间。
+//
+// 注意这只回答"要不要放他进来看一眼"，具体每个子项能不能看，
+// 仍然由 EffectiveForChildren 逐个算——放行不等于给权限。
+func (s *ACLService) CanReachInside(subj *Subject, space *model.Space, parent *model.Node) (bool, error) {
+	if subj.IsSuperAdmin() {
+		return true, nil
 	}
-	return ids, nil
+	// 分两步而不是 JOIN：省得把表名写死在 SQL 里，读起来也直白。
+	// 授权规则本来就不多，这两条查询都走索引。
+	var nodeIDs []uint64
+	err := s.db.Model(&model.AccessRule{}).
+		Distinct("node_id").
+		Where("space_id = ? AND node_id > 0 AND allow <> 0", space.ID).
+		Where("expire_at IS NULL OR expire_at > ?", time.Now()).
+		Where(s.principalCond(subj)).
+		Pluck("node_id", &nodeIDs).Error
+	if err != nil {
+		return false, fmt.Errorf("查询下层授权失败: %w", err)
+	}
+	if len(nodeIDs) == 0 {
+		return false, nil
+	}
+	if parent == nil {
+		// 问的是整个空间，有任何一条挂在节点上的授权就算够得着。
+		return true, nil
+	}
+
+	// 指定了 parent，就只认落在它子树里的那些——挂在别处的授权
+	// 不该让这一层也被放行。
+	var n int64
+	err = s.db.Model(&model.Node{}).
+		Where("id IN ?", nodeIDs).
+		Where("path LIKE ?", treex.LikePrefix(strings.TrimSuffix(parent.Path, "/"))).
+		Count(&n).Error
+	if err != nil {
+		return false, fmt.Errorf("查询下层目录失败: %w", err)
+	}
+	return n > 0, nil
 }
 
 // ListRules 列出某个空间/节点上直接挂载的权限规则（不含继承来的）。

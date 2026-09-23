@@ -224,7 +224,16 @@ func (s *SpaceService) decorate(subj *Subject, spaces []model.Space) ([]SpaceVie
 			return nil, err
 		}
 		if !perm.Has(model.PermView) {
-			continue
+			// 空间根上没权限，不代表里头没有他能看的东西。
+			// 跨部门授权常常只开放某个子目录（"这个文件夹给市场部看"），
+			// 只看根的话这个空间不会出现在侧栏，被授权的目录就永远点不到。
+			reachable, err := s.acl.CanReachInside(subj, &sp, nil)
+			if err != nil {
+				return nil, err
+			}
+			if !reachable {
+				continue
+			}
 		}
 		out = append(out, SpaceView{
 			Space:     sp,
