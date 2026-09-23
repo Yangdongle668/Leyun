@@ -34,12 +34,78 @@ title() {
   printf "${C_DIM}%s${C_RESET}\n" "────────────────────────────────────────────────────────"
 }
 
+# ---------- 进度显示 ----------
+#
+# 升级里有几步是纯等待：打包备份、停容器、等健康检查。它们本身不出声，
+# 屏幕能十几秒甚至几分钟一动不动，看着就像卡死了。下面这套东西只解决
+# 这一件事——让人知道它还在跑。
+#
+# 构建那一步不归这里管，见 compose_up 的注释。
+
+SPIN_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+
+# 指向一个正在变大的文件时，转圈旁边会带上它的当前大小。
+SPIN_WATCH=""
+
+spin_done() { printf "${C_GREEN}✓${C_RESET} %s  ${C_DIM}%ds${C_RESET}\n" "$1" "$2"; }
+
+# spin_run <说明> <命令...>
+#
+# 后台跑命令，前台转圈并报已用时长。命令的输出收进临时文件：
+# 成功了没人要看，失败了必须看得到，所以只在失败时原样吐出来。
+spin_run() {
+  local label="$1"; shift
+  local log; log="$(mktemp)"
+  local start=$SECONDS rc=0
+
+  # 输出不是终端时（重定向到日志、CI、nohup），转圈只会刷出一屏回车，
+  # 退化成一行说明。
+  if [ ! -t 1 ]; then
+    info "$label ..."
+    "$@" >"$log" 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || cat "$log" >&2
+    rm -f "$log"
+    return "$rc"
+  fi
+
+  "$@" >"$log" 2>&1 &
+  local pid=$! i=0 extra=""
+  while kill -0 "$pid" 2>/dev/null; do
+    extra=""
+    if [ -n "$SPIN_WATCH" ] && [ -f "$SPIN_WATCH" ]; then
+      extra="  $(du -h "$SPIN_WATCH" 2>/dev/null | cut -f1)"
+    fi
+    # 颜色必须留在格式串里：C_DIM 这些是没展开的 \033 字面量，
+    # 塞进 %s 会被原样打出来。
+    printf "\r${C_BLUE}%s${C_RESET} %s  ${C_DIM}%ds%s${C_RESET}\033[K" \
+      "${SPIN_FRAMES[i]}" "$label" "$((SECONDS - start))" "$extra"
+    i=$(((i + 1) % ${#SPIN_FRAMES[@]}))
+    sleep 0.1
+  done
+  wait "$pid" || rc=$?
+
+  printf "\r\033[K"
+  if [ "$rc" -eq 0 ]; then
+    spin_done "$label" "$((SECONDS - start))"
+  else
+    warn "$label 失败"
+    cat "$log" >&2
+  fi
+  rm -f "$log"
+  return "$rc"
+}
+
 DO_PULL=1
 DO_BACKUP=1
 DO_ROLLBACK=0
 KEEP=5
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+# 从第 2 行起连续的注释就是用法说明，遇到第一行非注释就停。
+# 原来写的是固定行号 2,14p，文件头一改就会把 set -euo pipefail 也打出来。
+usage() {
+  awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"
+  exit 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,6 +133,29 @@ fi
 set -a; . "$ENV_FILE"; set +a
 PORT="${LEYUN_PORT:-8080}"
 
+# compose_up 按当初的部署形态启动。
+#
+# 两件事：
+#
+# 一是不能把 docker 的输出接到管道里。一接管道 BuildKit 就判定不是终端，
+# 退回纯文本模式，再加上管道缓冲，屏幕可以几十秒一动不动——这正是
+# 升级看着像卡死、而 deploy.sh 看着正常的原因（那边是直接往终端上画的）。
+# 所以这里一律让 docker 自己输出，它的进度条比我们能做的任何东西都好。
+#
+# 二是当初用 --no-office 部署的，升级时不能顺手把 ONLYOFFICE 拉起来。
+# leyun 在 compose 里 depends_on onlyoffice，点名 leyun 也会连带拉起它，
+# 得靠 --no-deps 挡住——那是个几 GB 的镜像，用户明确不要的东西不该在
+# 升级过程中冒出来。
+compose_up() {
+  if [ "${LEYUN_OFFICE_ENABLED:-true}" = "false" ]; then
+    # 这里必须点名 leyun：--no-deps 只在指定了服务时才起作用，
+    # 不带服务名的 up 照样会把 compose 文件里的所有服务都拉起来。
+    "${DC[@]}" up -d --build --no-deps leyun
+  else
+    "${DC[@]}" up -d --build "$@"
+  fi
+}
+
 # ---------- 备份 / 回滚 ----------
 mkdir -p "$BACKUP_DIR"
 
@@ -76,14 +165,20 @@ make_backup() {
   mkdir -p "$target"
 
   # 先停服务再复制：SQLite 正在写的时候直接拷会拿到不一致的快照。
-  info "暂停服务以获得一致的数据快照"
-  "${DC[@]}" stop leyun >/dev/null 2>&1 || true
+  spin_run "暂停服务以获得一致的数据快照" "${DC[@]}" stop leyun || true
 
-  info "备份 data/ 与配置"
+  # 先把体量报出来。知道要打包多少，等起来心里有数。
+  local size
+  size="$(du -sh "$SCRIPT_DIR/data" 2>/dev/null | cut -f1 || true)"
+  [ -n "$size" ] && info "data/ 当前 $size"
+
+  # 转圈时带上压缩包的当前大小，能看出它确实在长。
   if command -v tar >/dev/null 2>&1; then
-    tar -czf "$target/data.tar.gz" -C "$SCRIPT_DIR" data
+    SPIN_WATCH="$target/data.tar.gz"
+    spin_run "打包 data/" tar -czf "$target/data.tar.gz" -C "$SCRIPT_DIR" data
+    SPIN_WATCH=""
   else
-    cp -a "$SCRIPT_DIR/data" "$target/data"
+    spin_run "复制 data/" cp -a "$SCRIPT_DIR/data" "$target/data"
   fi
   cp -a "$ENV_FILE" "$target/.env" 2>/dev/null || true
   cp -a "$SCRIPT_DIR/config.yaml" "$target/config.yaml" 2>/dev/null || true
@@ -109,28 +204,44 @@ restore_backup() {
   local target="$1"
   [ -d "$target" ] || die "备份目录不存在：$target"
   info "从 $(basename "$target") 恢复数据"
-  "${DC[@]}" stop leyun >/dev/null 2>&1 || true
+  spin_run "停止服务" "${DC[@]}" stop leyun || true
   if [ -f "$target/data.tar.gz" ]; then
     rm -rf "$SCRIPT_DIR/data"
-    tar -xzf "$target/data.tar.gz" -C "$SCRIPT_DIR"
+    spin_run "解包 data/" tar -xzf "$target/data.tar.gz" -C "$SCRIPT_DIR"
   elif [ -d "$target/data" ]; then
     rm -rf "$SCRIPT_DIR/data"
-    cp -a "$target/data" "$SCRIPT_DIR/data"
+    spin_run "复制 data/" cp -a "$target/data" "$SCRIPT_DIR/data"
   fi
   [ -f "$target/.env" ] && cp -a "$target/.env" "$ENV_FILE"
   [ -f "$target/config.yaml" ] && cp -a "$target/config.yaml" "$SCRIPT_DIR/config.yaml"
   ok "数据已恢复"
 }
 
+# 等服务起来。容器刚重建完，这一等可能是十几秒，必须一直有动静。
 wait_healthy() {
   local url="http://127.0.0.1:${PORT}/api/v1/health"
-  for _ in $(seq 1 60); do
+  local start=$SECONDS i=0 limit=120
+  while [ $((SECONDS - start)) -lt "$limit" ]; do
     if curl -fsS --noproxy '*' --max-time 3 "$url" >/dev/null 2>&1; then
+      [ -t 1 ] && printf "\r\033[K"
+      spin_done "服务已就绪" "$((SECONDS - start))"
       return 0
     fi
-    sleep 2
-    printf "."
+    # 探活两秒一次就够了，但转圈得一直转：两秒才动一下，
+    # 跟不动看着没区别，照样让人以为卡住了。
+    local n=0
+    while [ "$n" -lt 20 ]; do
+      if [ -t 1 ]; then
+        printf "\r${C_BLUE}%s${C_RESET} 等待服务就绪  ${C_DIM}%ds / 最多 %ds${C_RESET}\033[K" \
+          "${SPIN_FRAMES[i]}" "$((SECONDS - start))" "$limit"
+        i=$(((i + 1) % ${#SPIN_FRAMES[@]}))
+      fi
+      n=$((n + 1))
+      sleep 0.1
+    done
+    [ -t 1 ] || printf "."
   done
+  [ -t 1 ] && printf "\r\033[K"
   printf "\n"
   return 1
 }
@@ -151,7 +262,7 @@ if [ "$DO_ROLLBACK" -eq 1 ]; then
 
   restore_backup "$latest"
   info "重建并启动"
-  "${DC[@]}" up -d --build leyun
+  compose_up leyun
   if wait_healthy; then
     ok "回滚完成，服务已恢复"
     if [ "$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)" = "HEAD" ]; then
@@ -191,7 +302,8 @@ if [ "$DO_PULL" -eq 1 ]; then
     # 网络抖动重试三次，内网拉 GitHub 经常一次不成。
     pulled=0
     for attempt in 1 2 3; do
-      if git -C "$SCRIPT_DIR" pull --ff-only 2>&1 | sed 's/^/    /'; then
+      # 同样不接管道：git 拉大仓库时自己有进度条，接了管道就没有了。
+      if git -C "$SCRIPT_DIR" pull --ff-only; then
         pulled=1
         break
       fi
@@ -223,12 +335,13 @@ else
 fi
 
 # 3. 重建
-title "3/4 重建镜像并重启"
-if ! "${DC[@]}" up -d --build 2>&1 | sed 's/^/    /'; then
+title "3/4 重建镜像并重启（首次或依赖有变动时需要几分钟）"
+# 这里不接管道、不做缩进，让 docker 自己往终端上画进度——见 compose_up 的注释。
+if ! compose_up; then
   warn "构建失败"
   if [ "$DO_BACKUP" -eq 1 ] && [ -f "$BACKUP_DIR/latest" ]; then
     restore_backup "$(cat "$BACKUP_DIR/latest")"
-    "${DC[@]}" up -d leyun >/dev/null 2>&1 || true
+    spin_run "回退到升级前的容器" "${DC[@]}" up -d leyun || true
   fi
   die "升级已中止，数据保持升级前状态"
 fi
@@ -236,10 +349,7 @@ ok "容器已重建"
 
 # 4. 健康检查
 title "4/4 健康检查"
-if wait_healthy; then
-  printf "\n"
-  ok "服务已就绪"
-else
+if ! wait_healthy; then
   warn "服务未在两分钟内就绪，开始自动回滚"
   if [ "$DO_BACKUP" -eq 1 ] && [ -f "$BACKUP_DIR/latest" ]; then
     latest="$(cat "$BACKUP_DIR/latest")"
@@ -247,12 +357,12 @@ else
       git -C "$SCRIPT_DIR" checkout -q "$OLD_COMMIT" 2>/dev/null || true
     fi
     restore_backup "$latest"
-    "${DC[@]}" up -d --build leyun >/dev/null 2>&1 || true
+    # 回滚这一步照样把 docker 的输出放出来：这时候人正盯着屏幕想知道
+    # 到底怎么了，闷着头重建只会更慌。
+    compose_up leyun || true
     if wait_healthy; then
-      printf "\n"
       ok "已回滚到升级前的版本"
     else
-      printf "\n"
       die "回滚后仍未就绪，请手工排查：${DC[*]} logs -f leyun"
     fi
   fi
