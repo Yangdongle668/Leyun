@@ -12,6 +12,29 @@ import (
 	"github.com/Yangdongle668/Leyun/internal/service"
 )
 
+// OfficeRootPaths 是 Document Server 在**根路径**上占用的地址。
+//
+// 为什么根上也要接一份——
+//
+// DS 在响应里给出的是绝对地址，而且是按根路径拼的，不带 /onlyoffice 前缀。
+// 最典型的是转换后的文件：
+//
+//	GET https://域名/cache/files/data/n2-v1-.../origin.pdf  →  404
+//
+// 浏览器照着去取，落到乐云的前端兜底上，得到 404。表现就是"编辑器能打开，
+// 一动手编辑就报错"。把这些路径也转给 DS，它给什么地址都能落到实处。
+//
+// 这些前缀和乐云自己的路由没有重叠，只有 /fonts 是例外，见 LeyunFontPrefix。
+var OfficeRootPaths = []string{
+	"/cache", "/web-apps", "/sdkjs", "/sdkjs-plugins", "/dictionaries",
+	"/coauthoring", "/doc", "/downloadfile", "/internal", "/info",
+	"/hosting", "/converter", "/fonts",
+}
+
+// LeyunFontPrefix 是乐云自己打包的中文字体，和 DS 的 /fonts 撞在一起了。
+// 这一段必须留给乐云，其余 /fonts/* 才转给 DS——否则界面会退回宋体。
+const LeyunFontPrefix = "/fonts/noto-sans-sc/"
+
 // OfficeProxy 把 /onlyoffice/* 原样转发给 Document Server。
 //
 // 为什么非要在自己这里转一道——

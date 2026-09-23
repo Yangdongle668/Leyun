@@ -50,6 +50,20 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 		proxy := h.OfficeProxy()
 		r.Any(service.OfficeProxyPath, proxy)
 		r.Any(service.OfficeProxyPath+"/*any", proxy)
+
+		// DS 给出的绝对地址是按根路径拼的（/cache/files/... 之类），
+		// 不带 /onlyoffice 前缀，所以根上也要接一份，见 OfficeRootPaths。
+		assets := web.FileServer()
+		for _, p := range handler.OfficeRootPaths {
+			r.Any(p+"/*any", func(c *gin.Context) {
+				// 乐云自己的中文字体和 DS 的 /fonts 撞在一起，这一段留给乐云。
+				if strings.HasPrefix(c.Request.URL.Path, handler.LeyunFontPrefix) {
+					assets.ServeHTTP(c.Writer, c.Request)
+					return
+				}
+				proxy(c)
+			})
+		}
 	}
 
 	// ---- 开放接口：给外部 AI Agent / 索引程序用 ----
