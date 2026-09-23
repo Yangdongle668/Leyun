@@ -9,6 +9,7 @@
     "dev": "vite",
     "prebuild": "node scripts/copy-pdfjs-assets.mjs",
     "build": "vite build",
+    "postbuild": "node scripts/keep-dist-placeholder.mjs",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
