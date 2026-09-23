@@ -140,10 +140,8 @@ GET https://你的域名/cache/files/data/n2-v1-xxx/origin.pdf 404 (Not Found)
 `/doc` `/downloadfile` 等等，见 `internal/api/handler/officeproxy.go` 里的
 `OfficeRootPaths`）。DS 给什么地址都能落到实处。
 
-这些前缀和乐云自己的路由没有重叠，只有 `/fonts` 是例外——乐云打包的中文字体
-也在那儿。所以 `/fonts/noto-sans-sc/*` 留给乐云，其余 `/fonts/*` 才转给 DS。
-升级 Document Server 之后如果冒出新的根路径 404，把那个前缀加进
-`OfficeRootPaths` 即可。
+这些前缀和乐云自己的路由没有重叠。升级 Document Server 之后如果冒出新的
+根路径 404，把那个前缀加进 `OfficeRootPaths` 即可。
 
 **Docker 部署**
 `./deploy.sh` 默认就会映射 80 和 443，不用改任何东西。

@@ -20,6 +20,18 @@ type Handler struct {
 // New 构造 Handler。
 func New(svc *service.Registry) *Handler { return &Handler{svc: svc} }
 
+// wakeIndexer 让知识库立刻去扫一遍，而不是干等下一轮轮询。
+//
+// 索引协程每 2 分钟兜底扫一次全量，所以不叫醒它文件终究也会被索引——
+// 只是上传完要等上两分钟才搜得到，用起来就像"自动索引没生效"。
+//
+// 叫醒是一次非阻塞的 channel 投递，通道容量为 1：批量上传几十个文件时
+// 会自然合并成一次，不会把索引协程刷爆。哪些文件该进索引由索引协程自己
+// 按配置判断（个人空间默认不进），这里只负责催一下。
+func (h *Handler) wakeIndexer() {
+	h.svc.KB.Wake()
+}
+
 // audit 记录一条审计日志，自动带上当前用户与请求信息。
 func (h *Handler) audit(c *gin.Context, action, targetType string, targetID uint64, target, detail string, success bool) {
 	entry := service.Entry{

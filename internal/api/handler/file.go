@@ -221,6 +221,9 @@ func (h *Handler) PurgeFiles(c *gin.Context) {
 		return
 	}
 	h.audit(c, service.ActionFilePurge, "node", 0, "", fmt.Sprintf("彻底删除 %d 个条目", n), true)
+	// 内容没了，索引里的向量也该跟着走。等两分钟轮询的话，
+	// 这段时间里问答仍然可能引用到已经删掉的文件。
+	h.wakeIndexer()
 	response.OK(c, gin.H{"purged": n})
 }
 

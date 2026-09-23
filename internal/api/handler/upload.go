@@ -46,6 +46,7 @@ func (h *Handler) UploadFile(c *gin.Context) {
 	}
 	h.audit(c, service.ActionFileUpload, "node", node.ID, node.Name,
 		service.HumanSize(node.Size), true)
+	h.wakeIndexer()
 	response.OK(c, node)
 }
 
@@ -66,6 +67,8 @@ func (h *Handler) InitUpload(c *gin.Context) {
 	}
 	if res.Instant && res.Node != nil {
 		h.audit(c, service.ActionFileUpload, "node", res.Node.ID, res.Node.Name, "秒传", true)
+		// 秒传虽然没传字节，但空间里多了一份文件，一样要让它可被检索。
+		h.wakeIndexer()
 	}
 	response.OK(c, res)
 }
@@ -136,6 +139,7 @@ func (h *Handler) CompleteUpload(c *gin.Context) {
 	}
 	h.audit(c, service.ActionFileUpload, "node", node.ID, node.Name,
 		service.HumanSize(node.Size), true)
+	h.wakeIndexer()
 	response.OK(c, node)
 }
 
