@@ -152,12 +152,36 @@ func (s *FileService) List(subj *Subject, spaceID, parentID uint64, keyword, ord
 		return nil, err
 	}
 
+	// 自己没权限、但底下挂着给他的授权的目录，要留作"路过"用。
+	// 否则单独授权一个深处的文件时，沿途每一级都会被下面那个过滤器抹掉，
+	// 人就永远点不到那个文件。
+	//
+	// 只在确实有目录被挡下来时才去查：绝大多数情况下用户对整个目录都有权限，
+	// 一个都不会被挡，这时候不该白白多跑两条查询。
+	var blocked []model.Node
+	for _, n := range items {
+		if n.IsDir && !permMap[n.ID].Has(model.PermView) {
+			blocked = append(blocked, n)
+		}
+	}
+	passThrough := map[uint64]bool{}
+	if len(blocked) > 0 {
+		passThrough, err = s.acl.TraversableDirs(subj, spaceID, blocked)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	views := make([]NodeView, 0, len(items))
 	for _, n := range items {
 		perm := permMap[n.ID]
 		if !perm.Has(model.PermView) {
-			// 子目录上挂了 deny 的，直接从列表里消失，避免"看得见点不开"。
-			continue
+			if !passThrough[n.ID] {
+				// 子目录上挂了 deny 的，直接从列表里消失，避免"看得见点不开"。
+				continue
+			}
+			// 路过用的目录：一个权限都不给，界面上也就没有任何操作可做。
+			perm = model.PermNone
 		}
 		views = append(views, s.toView(n, perm, creators[n.CreatedBy]))
 	}

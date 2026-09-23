@@ -535,37 +535,95 @@ func (s *ACLService) CanReachInside(subj *Subject, space *model.Space, parent *m
 	if subj.IsSuperAdmin() {
 		return true, nil
 	}
-	// 分两步而不是 JOIN：省得把表名写死在 SQL 里，读起来也直白。
-	// 授权规则本来就不多，这两条查询都走索引。
+	paths, err := s.GrantedPaths(subj, space.ID)
+	if err != nil {
+		return false, err
+	}
+	if parent == nil {
+		// 问的是整个空间，有任何一条挂在节点上的授权就算够得着。
+		return len(paths) > 0, nil
+	}
+	return pathUnder(paths, parent.Path), nil
+}
+
+// GrantedPaths 返回主体在该空间里被**直接**授权过的那些节点的路径。
+//
+// 单独抽出来是为了拿它做前缀匹配：要判断"这个目录底下还有没有他够得着的
+// 东西"，逐个目录去查一遍数据库会把列目录拖成 N 次查询；取一次路径清单，
+// 后面全在内存里比字符串。
+//
+// 授权规则的数量级是"管理员点了多少次授权"，很小。
+func (s *ACLService) GrantedPaths(subj *Subject, spaceID uint64) ([]string, error) {
+	if subj == nil || subj.User == nil {
+		return nil, nil
+	}
 	var nodeIDs []uint64
 	err := s.db.Model(&model.AccessRule{}).
 		Distinct("node_id").
-		Where("space_id = ? AND node_id > 0 AND allow <> 0", space.ID).
+		Where("space_id = ? AND node_id > 0 AND allow <> 0", spaceID).
 		Where("expire_at IS NULL OR expire_at > ?", time.Now()).
 		Where(s.principalCond(subj)).
 		Pluck("node_id", &nodeIDs).Error
 	if err != nil {
-		return false, fmt.Errorf("查询下层授权失败: %w", err)
+		return nil, fmt.Errorf("查询授权节点失败: %w", err)
 	}
 	if len(nodeIDs) == 0 {
-		return false, nil
+		return nil, nil
 	}
-	if parent == nil {
-		// 问的是整个空间，有任何一条挂在节点上的授权就算够得着。
-		return true, nil
+	var paths []string
+	if err := s.db.Model(&model.Node{}).Where("id IN ?", nodeIDs).
+		Pluck("path", &paths).Error; err != nil {
+		return nil, fmt.Errorf("查询授权节点路径失败: %w", err)
 	}
+	return paths, nil
+}
 
-	// 指定了 parent，就只认落在它子树里的那些——挂在别处的授权
-	// 不该让这一层也被放行。
-	var n int64
-	err = s.db.Model(&model.Node{}).
-		Where("id IN ?", nodeIDs).
-		Where("path LIKE ?", treex.LikePrefix(strings.TrimSuffix(parent.Path, "/"))).
-		Count(&n).Error
-	if err != nil {
-		return false, fmt.Errorf("查询下层目录失败: %w", err)
+// pathUnder 判断 paths 里有没有落在 dir 子树内的（含 dir 自身）。
+func pathUnder(paths []string, dir string) bool {
+	prefix := strings.TrimSuffix(dir, "/") + "/"
+	for _, p := range paths {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
 	}
-	return n > 0, nil
+	return false
+}
+
+// TraversableDirs 从一批子节点里挑出"自己没权限、但底下有被授权内容"的目录。
+//
+// 这类目录必须显示出来，否则被授权的东西永远点不到：把某个深处的文件单独
+// 授权给别人时，沿途每一级目录上都没有任何权限，一级级都会被过滤掉，
+// 结果就是"有权限但走不进去"。
+//
+// 它们只是**路过**用的，不带任何权限——界面上不会出现上传、改名这些操作，
+// 里面的东西也仍旧一项项按权限过滤。
+func (s *ACLService) TraversableDirs(subj *Subject, spaceID uint64, children []model.Node) (map[uint64]bool, error) {
+	out := map[uint64]bool{}
+	if len(children) == 0 || subj == nil || subj.IsSuperAdmin() {
+		return out, nil
+	}
+	var dirs []model.Node
+	for _, c := range children {
+		if c.IsDir {
+			dirs = append(dirs, c)
+		}
+	}
+	if len(dirs) == 0 {
+		return out, nil
+	}
+	paths, err := s.GrantedPaths(subj, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return out, nil
+	}
+	for _, d := range dirs {
+		if pathUnder(paths, d.Path) {
+			out[d.ID] = true
+		}
+	}
+	return out, nil
 }
 
 // ListRules 列出某个空间/节点上直接挂载的权限规则（不含继承来的）。
