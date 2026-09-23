@@ -179,7 +179,18 @@ async function removeDept(node: DeptNode) {
         </el-table-column>
         <el-table-column label="成员" width="100">
           <template #default="{ row }">
-            <span>{{ row.user_count }} 人</span>
+            <!--
+              原来这里只是一个数字，看得见人数却点不进去，
+              想知道"这个部门都有谁、谁是部门管理员"只能自己去账号管理里翻。
+              现在带着 dept_id 跳过去，落地就是筛好的。
+            -->
+            <router-link
+              v-if="row.user_count > 0"
+              :to="{ name: 'admin-users', query: { dept_id: row.id } }"
+            >
+              {{ row.user_count }} 人
+            </router-link>
+            <span v-else class="ly-muted">0 人</span>
           </template>
         </el-table-column>
         <el-table-column label="部门空间" width="120">

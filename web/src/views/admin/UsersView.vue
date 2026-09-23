@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '@/api'
 import type { Department, User } from '@/api/types'
@@ -7,6 +8,7 @@ import { useUserStore } from '@/stores/user'
 import { bytesToGB, formatTime, gbToBytes, humanSize } from '@/utils/format'
 
 const store = useUserStore()
+const route = useRoute()
 
 const loading = ref(false)
 const list = ref<User[]>([])
@@ -51,6 +53,19 @@ const deptOptions = computed(() =>
   })),
 )
 
+/**
+ * 只剩一个顶级部门，说明组织架构还没建。
+ *
+ * 这时「所属部门」这个必填项只有"总公司"一个选项，等于没得选；
+ * 角色里的"部门管理员"也没有意义——管的是整棵树，跟超管差不多。
+ * 刚装完的系统就是这个状态，界面上必须说清楚，否则看起来就像
+ * 分配部门这个功能坏了。
+ */
+const noRealDept = computed(() => departments.value.length <= 1)
+
+/** 顶级部门的 id，新建下级时当默认父节点。 */
+const rootDeptId = computed(() => departments.value.find((d) => d.depth === 0)?.id ?? 0)
+
 async function load() {
   loading.value = true
   try {
@@ -75,8 +90,36 @@ async function loadDepartments() {
 }
 
 onMounted(async () => {
+  // 从「部门管理」点成员数跳过来时带着 dept_id，进来就只看这个部门的人。
+  const fromDept = Number(route.query.dept_id)
+  if (Number.isFinite(fromDept) && fromDept > 0) query.dept_id = fromDept
   await Promise.all([load(), loadDepartments()])
 })
+
+/**
+ * 在开通账号的过程中直接建部门。
+ *
+ * 原来只能退出去、切到「部门管理」建好、再回来重填一遍表单——
+ * 刚装完系统的人第一次开账号必然撞上这一下。
+ */
+async function createDeptInline() {
+  const { value } = await ElMessageBox.prompt(
+    '新部门会挂在顶级部门下面，并自动创建同名部门空间；本部门成员默认可读写。',
+    '新建部门',
+    {
+      confirmButtonText: '创建',
+      cancelButtonText: '取消',
+      inputPlaceholder: '部门名称，例如：研发中心',
+      inputPattern: /\S/,
+      inputErrorMessage: '请填写部门名称',
+    },
+  )
+  const dept = await api.createDept({ parent_id: rootDeptId.value, name: value.trim() })
+  await loadDepartments()
+  // 建完直接选中，省得再翻一次下拉。
+  form.dept_id = dept.id
+  ElMessage.success(`部门「${dept.name}」已创建`)
+}
 
 function search() {
   query.page = 1
@@ -367,16 +410,36 @@ async function removeUser(row: User) {
           <el-input v-model="form.nickname" placeholder="留空则与用户名相同" />
         </el-form-item>
         <el-form-item label="所属部门" required>
-          <el-select v-model="form.dept_id" filterable style="width: 100%">
-            <el-option v-for="o in deptOptions" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
+          <div class="ly-dept-field">
+            <div class="ly-inline">
+              <el-select v-model="form.dept_id" filterable style="flex: 1">
+                <el-option v-for="o in deptOptions" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
+              <el-button @click="createDeptInline">新建部门</el-button>
+            </div>
+            <!--
+              组织架构还没建的时候，这个下拉只有"总公司"一个选项。
+              不说清楚的话，看着就像分配部门这个功能坏了。
+            -->
+            <p v-if="noRealDept" class="ly-field-hint">
+              目前只有顶级部门。先建好研发、市场这类下级部门，再把人分进去，
+              「部门管理员」才管得住一块具体的地方。可以直接点上面的「新建部门」，
+              也可以去<router-link :to="{ name: 'admin-departments' }">部门管理</router-link>里一次建好。
+            </p>
+          </div>
         </el-form-item>
         <el-form-item label="角色">
-          <el-select v-model="form.role" style="width: 100%">
-            <el-option value="member" label="普通成员" />
-            <el-option value="dept_admin" label="部门管理员（管理本部门及下级空间，不能开通账号）" />
-            <el-option value="super_admin" label="超级管理员（可开通账号、拥有全部权限）" />
-          </el-select>
+          <div class="ly-dept-field">
+            <el-select v-model="form.role" style="width: 100%">
+              <el-option value="member" label="普通成员（只能用分配给他的空间）" />
+              <el-option value="dept_admin" label="部门管理员（管理本部门及下级空间，不能开通账号）" />
+              <el-option value="super_admin" label="超级管理员（可开通账号、拥有全部权限）" />
+            </el-select>
+            <p v-if="form.role === 'dept_admin' && form.dept_id === rootDeptId" class="ly-field-hint">
+              选的是顶级部门，管辖范围等于整棵部门树，和超级管理员相差无几。
+              通常应该挂到某个具体的下级部门上。
+            </p>
+          </div>
         </el-form-item>
         <el-form-item label="个人配额">
           <el-input-number v-model="form.quotaGB" :min="0" :max="102400" style="width: 160px" />
@@ -452,6 +515,16 @@ async function removeUser(row: User) {
   display: flex;
   gap: 8px;
   width: 100%;
+}
+.ly-dept-field {
+  width: 100%;
+}
+/* 表单项底下的补充说明：比正文淡一档、小一号，不跟输入框抢注意力 */
+.ly-field-hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ly-text-tertiary);
 }
 .ly-pager {
   display: flex;
