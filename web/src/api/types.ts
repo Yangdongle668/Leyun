@@ -347,3 +347,13 @@ export interface OfficeEditorConfig {
   /** ONLYOFFICE 的编辑器类型：word / cell / slide / pdf。 */
   doc_type: string
 }
+
+/**
+ * 上传时撞上同名文件的处理方式，跟 Windows 复制文件弹出来的三个选项一一对应。
+ *
+ * - replace 替换：内容写进已有的那个文件，版本号加一，
+ *   原来的权限、分享链接、知识库引用都还指着同一个文件。
+ * - rename  保留两者：新文件自动改名成 `报价单(1).xlsx`。
+ * - skip    跳过：这个文件不传了。
+ */
+export type ConflictMode = 'replace' | 'rename' | 'skip'

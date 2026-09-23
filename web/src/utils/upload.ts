@@ -1,5 +1,6 @@
 import { api, getToken } from '@/api'
-import type { FileNode } from '@/api/types'
+import { ApiError } from '@/api/request'
+import type { ConflictMode, FileNode } from '@/api/types'
 
 /** 一个上传任务在界面上的状态。 */
 export interface UploadTask {
@@ -11,11 +12,71 @@ export interface UploadTask {
   parentId: number
   /** 0-100 */
   progress: number
-  status: 'hashing' | 'uploading' | 'done' | 'error' | 'canceled'
+  status: 'queued' | 'hashing' | 'uploading' | 'done' | 'error' | 'canceled'
   message?: string
   instant?: boolean
+  /** 撞上同名文件时怎么办；不填按"保留两者"。 */
+  conflict?: ConflictMode
   node?: FileNode
   controller?: AbortController
+}
+
+/**
+ * 同时上传的文件数上限。
+ *
+ * 浏览器对同一个域名只开 6 条并发连接，多出来的请求在浏览器里排队。
+ * 而 axios 的超时是从"创建请求"开始算的，不是从"真正发出去"开始算——
+ * 一口气丢几十个文件进去，排在后面的会在还没轮到自己时就超时，
+ * 界面上就是一片"网络连接失败"。所以文件层面必须自己限流：
+ * 3 个文件 × 每个最多 3 个分片请求 = 9 条，刚好压在浏览器的连接池附近。
+ */
+export const FILE_CONCURRENCY = 3
+
+/**
+ * 判断一个错误值不值得重试。
+ *
+ * ApiError.code 为 0 表示压根没收到响应（断网、超时、连接被掐）；
+ * 5xx 是服务端临时抽风。这两类再试一次往往就过了。
+ * 4xx（没权限、配额满、文件名非法）重试多少次都是同一个结果，立刻失败反而干脆。
+ */
+function isTransient(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.code === 0 || (err.code >= 500 && err.code < 600) || err.code === 50000
+  }
+  // fetch 在网络层出错时抛的是 TypeError；主动取消抛的是 AbortError，不在此列。
+  return err instanceof TypeError
+}
+
+/** 出错就退避重试，只重试 isTransient 认可的那些。 */
+async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal, tries = 3): Promise<T> {
+  let last: unknown
+  for (let i = 0; i < tries; i += 1) {
+    if (signal.aborted) throw new DOMException('已取消', 'AbortError')
+    try {
+      return await fn()
+    } catch (err) {
+      last = err
+      if (signal.aborted || !isTransient(err) || i === tries - 1) throw err
+      // 0.8s、1.6s、3.2s……再加一点随机，免得几个任务同时失败又同时重来。
+      const wait = 800 * 2 ** i + Math.random() * 400
+      await new Promise((resolve) => setTimeout(resolve, wait))
+    }
+  }
+  throw last
+}
+
+/**
+ * 哈希闸门：同一时刻只算一个文件的哈希。
+ *
+ * computeHash 要把整个文件读进内存，几十个文件一起算会直接把标签页撑爆。
+ * 排队算还有个额外好处：CPU 不用在一堆任务之间来回切，总耗时反而更短。
+ */
+let hashGate: Promise<unknown> = Promise.resolve()
+function queueHash(file: File): Promise<string> {
+  const run = hashGate.then(() => computeHash(file))
+  // 失败也要放行下一个，否则整条队列卡死。
+  hashGate = run.catch(() => undefined)
+  return run
 }
 
 /**
@@ -55,9 +116,14 @@ async function putChunk(uploadId: string, index: number, blob: Blob, signal: Abo
     body: form,
     signal,
   })
-  if (!resp.ok) throw new Error(`分片 ${index + 1} 上传失败（HTTP ${resp.status}）`)
+  // 包成 ApiError，好让 isTransient 分得清"服务端 500"和"没权限"。
+  if (!resp.ok) {
+    throw new ApiError(resp.status, `分片 ${index + 1} 上传失败（HTTP ${resp.status}）`)
+  }
   const body = await resp.json()
-  if (body.code !== 0) throw new Error(body.message || `分片 ${index + 1} 上传失败`)
+  if (body.code !== 0) {
+    throw new ApiError(body.code ?? 0, body.message || `分片 ${index + 1} 上传失败`)
+  }
 }
 
 /**
@@ -72,19 +138,24 @@ export async function runUpload(task: UploadTask, onTick: () => void): Promise<F
   task.status = 'hashing'
   task.progress = 0
   onTick()
-  const hash = await computeHash(task.file)
+  const hash = await queueHash(task.file)
   if (controller.signal.aborted) return null
 
   task.status = 'uploading'
   onTick()
 
-  const init = await api.initUpload({
-    space_id: task.spaceId,
-    parent_id: task.parentId,
-    filename: task.name,
-    size: task.size,
-    hash,
-  })
+  const init = await withRetry(
+    () =>
+      api.initUpload({
+        space_id: task.spaceId,
+        parent_id: task.parentId,
+        filename: task.name,
+        size: task.size,
+        hash,
+        conflict: task.conflict,
+      }),
+    controller.signal,
+  )
 
   if (init.instant && init.node) {
     task.instant = true
@@ -122,7 +193,9 @@ export async function runUpload(task: UploadTask, onTick: () => void): Promise<F
       const start = index * chunkSize
       const blob = task.file.slice(start, Math.min(start + chunkSize, task.size))
       try {
-        await putChunk(uploadId, index, blob, controller.signal)
+        // 分片是幂等的（同一个序号写同一个文件），重试最安全也最划算：
+        // 一片失败就整个文件重来太亏，何况大文件有上百片。
+        await withRetry(() => putChunk(uploadId, index, blob, controller.signal), controller.signal)
         done.add(index)
         updateProgress()
       } catch (err) {
@@ -142,7 +215,8 @@ export async function runUpload(task: UploadTask, onTick: () => void): Promise<F
   }
   if (failure) throw failure
 
-  const node = await api.completeUpload(uploadId)
+  // 后端记住了这次会话生成的节点，重复调用会把同一个节点还回来，所以敢重试。
+  const node = await withRetry(() => api.completeUpload(uploadId), controller.signal)
   task.progress = 100
   task.status = 'done'
   task.node = node

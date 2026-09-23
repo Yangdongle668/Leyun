@@ -8,18 +8,29 @@ const emit = defineEmits<{ cancel: [UploadTask]; clear: [] }>()
 
 const collapsed = ref(false)
 
-const active = computed(() => props.tasks.filter((t) => t.status === 'hashing' || t.status === 'uploading'))
+/** 还没跑完的：排队中的也算，不然整批传到一半会显示"已完成"。 */
+const active = computed(() =>
+  props.tasks.filter(
+    (t) => t.status === 'hashing' || t.status === 'uploading' || t.status === 'queued',
+  ),
+)
+const waiting = computed(() => props.tasks.filter((t) => t.status === 'queued').length)
 const failed = computed(() => props.tasks.filter((t) => t.status === 'error'))
 const doneCount = computed(() => props.tasks.filter((t) => t.status === 'done').length)
 
 const summary = computed(() => {
-  if (active.value.length) return `正在上传 ${active.value.length} 个文件`
+  if (active.value.length) {
+    const tail = waiting.value ? `，${waiting.value} 个排队中` : ''
+    return `正在上传 ${active.value.length - waiting.value} 个文件${tail}`
+  }
   if (failed.value.length) return `${failed.value.length} 个文件上传失败`
   return `已完成 ${doneCount.value} 个文件`
 })
 
 function statusText(t: UploadTask) {
   switch (t.status) {
+    case 'queued':
+      return '排队中…'
     case 'hashing':
       return '计算校验值…'
     case 'uploading':
@@ -74,7 +85,7 @@ function statusText(t: UploadTask) {
         <div class="ly-upload-status">
           <span :class="{ 'is-error': t.status === 'error' }">{{ statusText(t) }}</span>
           <button
-            v-if="t.status === 'uploading' || t.status === 'hashing'"
+            v-if="t.status === 'uploading' || t.status === 'hashing' || t.status === 'queued'"
             class="ly-upload-btn"
             title="取消"
             @click="emit('cancel', t)"

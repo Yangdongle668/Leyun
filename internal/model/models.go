@@ -309,12 +309,19 @@ type UploadSession struct {
 	// Hash 是整文件的 SHA-256，用于秒传与完整性校验；可为空（未知时在合并阶段计算）。
 	Hash string `gorm:"size:64;index" json:"hash,omitempty"`
 	// ReceivedMask 是分片到达位图（JSON 数组，元素为已收到的分片序号）。
-	ReceivedMask string     `gorm:"type:text" json:"-"`
-	Completed    bool       `gorm:"not null;default:false" json:"completed"`
-	ExpireAt     time.Time  `gorm:"index;not null" json:"expire_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	ReceivedMask string `gorm:"type:text" json:"-"`
+	// Conflict 是重名时的处理方式，见 service.ConflictMode。空串按"保留两者"处理。
+	Conflict  string `gorm:"size:16" json:"conflict,omitempty"`
+	Completed bool   `gorm:"not null;default:false" json:"completed"`
+	// NodeID 是合并完成后生成（或被覆盖）的文件节点。
+	//
+	// 记下来是为了让 complete 接口可以重试：合并成功但响应在路上丢了的时候，
+	// 前端重发一次不该变成"该上传已完成"的报错，而应该拿回同一个节点。
+	NodeID     uint64     `gorm:"not null;default:0" json:"node_id,omitempty"`
+	ExpireAt   time.Time  `gorm:"index;not null" json:"expire_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // TableName 指定表名。

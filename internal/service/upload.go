@@ -32,8 +32,8 @@ func NewUploadService(db *gorm.DB, cfg *config.Config, store *storage.Store, fil
 	return &UploadService{db: db, cfg: cfg, store: store, file: file, acl: acl, space: space}
 }
 
-// SimpleUpload 直接上传一个小文件。
-func (s *UploadService) SimpleUpload(subj *Subject, spaceID, parentID uint64, filename string, size int64, r io.Reader) (*model.Node, error) {
+// SimpleUpload 直接上传一个小文件。mode 决定撞上同名文件时怎么办。
+func (s *UploadService) SimpleUpload(subj *Subject, spaceID, parentID uint64, filename string, size int64, r io.Reader, mode ConflictMode) (*model.Node, error) {
 	space, parent, err := s.checkTarget(subj, spaceID, parentID)
 	if err != nil {
 		return nil, err
@@ -53,9 +53,15 @@ func (s *UploadService) SimpleUpload(subj *Subject, spaceID, parentID uint64, fi
 		return nil, err
 	}
 
+	// 解析重名要在开事务之前：SQLite 只有一条连接，事务里再去查权限会死等。
+	plan, err := s.file.PlanConflict(subj, space, parentID, filename, mode)
+	if err != nil {
+		return nil, err
+	}
+
 	var node *model.Node
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		n, err := s.file.CreateFile(tx, subj, space, parent, filename, hash, written)
+		n, err := s.file.CreateFile(tx, subj, space, parent, filename, hash, written, plan)
 		if err != nil {
 			return err
 		}
@@ -100,6 +106,8 @@ type InitInput struct {
 	Size     int64  `json:"size"`
 	// Hash 是整文件 SHA-256，前端能算就传，用于秒传。
 	Hash string `json:"hash"`
+	// Conflict 是撞上同名文件时的处理方式，取值见 ConflictMode。留空按"保留两者"。
+	Conflict string `json:"conflict"`
 }
 
 // InitResult 是初始化分片上传的返回。
@@ -129,6 +137,7 @@ func (s *UploadService) Init(subj *Subject, in InitInput) (*InitResult, error) {
 	if err := s.space.CheckQuota(space, in.Size); err != nil {
 		return nil, err
 	}
+	mode := ParseConflictMode(in.Conflict)
 
 	// 秒传：内容已经在库里就只登记一条元数据。
 	if in.Hash != "" {
@@ -137,9 +146,13 @@ func (s *UploadService) Init(subj *Subject, in InitInput) (*InitResult, error) {
 			return nil, err
 		}
 		if blob != nil {
+			plan, err := s.file.PlanConflict(subj, space, in.ParentID, in.Filename, mode)
+			if err != nil {
+				return nil, err
+			}
 			var node *model.Node
 			err = s.db.Transaction(func(tx *gorm.DB) error {
-				n, err := s.file.CreateFile(tx, subj, space, parent, in.Filename, blob.Hash, blob.Size)
+				n, err := s.file.CreateFile(tx, subj, space, parent, in.Filename, blob.Hash, blob.Size, plan)
 				if err != nil {
 					return err
 				}
@@ -162,6 +175,13 @@ func (s *UploadService) Init(subj *Subject, in InitInput) (*InitResult, error) {
 			received, err := s.store.ReceivedChunks(existing.UploadID)
 			if err != nil {
 				return nil, err
+			}
+			// 续传时用户可能改了主意（上次选"保留两者"，这次选"替换"），以本次为准。
+			if existing.Conflict != string(mode) {
+				if err := s.db.Model(&model.UploadSession{}).Where("id = ?", existing.ID).
+					Update("conflict", string(mode)).Error; err != nil {
+					return nil, fmt.Errorf("更新上传会话失败: %w", err)
+				}
 			}
 			return &InitResult{
 				UploadID:   existing.UploadID,
@@ -197,6 +217,7 @@ func (s *UploadService) Init(subj *Subject, in InitInput) (*InitResult, error) {
 		ChunkSize:  chunkSize,
 		ChunkCount: chunkCount,
 		Hash:       in.Hash,
+		Conflict:   string(mode),
 		ExpireAt:   time.Now().Add(s.cfg.Storage.UploadSessionTTL),
 	}
 	if session.Filename == "" {
@@ -243,7 +264,14 @@ func (s *UploadService) PutChunk(subj *Subject, uploadID string, index int, r io
 }
 
 // Complete 合并分片并落库。
+//
+// 重复调用是安全的：已经合并过的会话直接把当初生成的节点原样返回，
+// 这样前端在网络抖动后重发一次 complete，拿到的还是同一个文件，
+// 不会变成报错、更不会多出一份。
 func (s *UploadService) Complete(subj *Subject, uploadID string) (*model.Node, error) {
+	if node, ok, err := s.completedNode(subj, uploadID); err != nil || ok {
+		return node, err
+	}
 	session, err := s.loadSession(subj, uploadID)
 	if err != nil {
 		return nil, err
@@ -274,16 +302,24 @@ func (s *UploadService) Complete(subj *Subject, uploadID string) (*model.Node, e
 		return nil, err
 	}
 
+	plan, err := s.file.PlanConflict(subj, space, session.ParentID, session.Filename,
+		ParseConflictMode(session.Conflict))
+	if err != nil {
+		return nil, err
+	}
+
 	var node *model.Node
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		n, err := s.file.CreateFile(tx, subj, space, parent, session.Filename, hash, size)
+		n, err := s.file.CreateFile(tx, subj, space, parent, session.Filename, hash, size, plan)
 		if err != nil {
 			return err
 		}
 		node = n
 		now := time.Now()
 		return tx.Model(&model.UploadSession{}).Where("id = ?", session.ID).
-			Updates(map[string]any{"completed": true, "hash": hash, "finished_at": now}).Error
+			Updates(map[string]any{
+				"completed": true, "hash": hash, "node_id": n.ID, "finished_at": now,
+			}).Error
 	})
 	if err != nil {
 		return nil, err
@@ -304,6 +340,33 @@ func (s *UploadService) Abort(subj *Subject, uploadID string) error {
 		return err
 	}
 	return s.db.Delete(&model.UploadSession{}, session.ID).Error
+}
+
+// completedNode 查这个会话是不是已经合并过了。
+// 第二个返回值为 true 表示"这次 complete 不用再做了"，节点在第一个返回值里。
+//
+// 只认自己发起的会话；老会话没记 node_id（或者文件后来被彻底删了）就当没完成过，
+// 让原来的流程去报"该上传已完成"，总比返回一个不存在的节点强。
+func (s *UploadService) completedNode(subj *Subject, uploadID string) (*model.Node, bool, error) {
+	var session model.UploadSession
+	err := s.db.Where("upload_id = ?", uploadID).First(&session).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("查询上传会话失败: %w", err)
+	}
+	if session.UserID != subj.User.ID || !session.Completed || session.NodeID == 0 {
+		return nil, false, nil
+	}
+	var node model.Node
+	if err := s.db.First(&node, session.NodeID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("查询文件失败: %w", err)
+	}
+	return &node, true, nil
 }
 
 func (s *UploadService) loadSession(subj *Subject, uploadID string) (*model.UploadSession, error) {

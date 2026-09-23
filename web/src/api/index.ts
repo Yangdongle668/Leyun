@@ -7,6 +7,7 @@ import type {
   DeptNode,
   Department,
   CertInfo,
+  ConflictMode,
   FileNode,
   KBConversation,
   KBDoc,
@@ -68,7 +69,17 @@ export const api = {
 
   /* ---------------- 上传 ---------------- */
 
-  initUpload: (data: { space_id: number; parent_id: number; filename: string; size: number; hash?: string }) =>
+  // 上传这两个接口单独放宽超时：init 撞上秒传要先查一遍内容库，
+  // complete 要把几十上百个分片合成一个文件再算哈希，大文件超过一分钟很正常。
+  // 用默认的 60 秒会在服务端明明还在干活的时候报"网络连接失败"。
+  initUpload: (data: {
+    space_id: number
+    parent_id: number
+    filename: string
+    size: number
+    hash?: string
+    conflict?: ConflictMode
+  }) =>
     post<{
       instant: boolean
       node?: FileNode
@@ -76,8 +87,9 @@ export const api = {
       chunk_size?: number
       chunk_count?: number
       uploaded: number[]
-    }>('/upload/init', data),
-  completeUpload: (upload_id: string) => post<FileNode>('/upload/complete', { upload_id }),
+    }>('/upload/init', data, { timeout: 120_000 }),
+  completeUpload: (upload_id: string) =>
+    post<FileNode>('/upload/complete', { upload_id }, { timeout: 300_000 }),
   abortUpload: (upload_id: string) => post('/upload/abort', { upload_id }),
 
   /* ---------------- 回收站 ---------------- */

@@ -342,10 +342,84 @@ func (s *FileService) Mkdir(subj *Subject, spaceID, parentID uint64, name string
 	return node, nil
 }
 
+// ConflictMode 是上传时撞上同名文件的处理方式，对应 Windows 复制文件时
+// 弹出的那三个选项。
+type ConflictMode string
+
+const (
+	// ConflictRename 保留两者：新文件自动加序号，老文件原样不动。默认行为。
+	ConflictRename ConflictMode = "rename"
+	// ConflictReplace 替换：把内容写进已有的那个节点，版本号加一，
+	// 权限、分享链接、知识库里的引用都还指着同一个文件。
+	ConflictReplace ConflictMode = "replace"
+	// ConflictSkip 跳过：压根不上传。前端自己就能处理，后端只是认得这个值。
+	ConflictSkip ConflictMode = "skip"
+)
+
+// ParseConflictMode 把前端传来的字符串归一化；认不出来的一律当"保留两者"。
+func ParseConflictMode(s string) ConflictMode {
+	switch ConflictMode(strings.ToLower(strings.TrimSpace(s))) {
+	case ConflictReplace:
+		return ConflictReplace
+	case ConflictSkip:
+		return ConflictSkip
+	default:
+		return ConflictRename
+	}
+}
+
+// ConflictPlan 是在开事务之前就定下来的"撞名怎么办"。
+//
+// 为什么要提前定：SQLite 只开一条连接，事务一开就把它占住了，
+// 事务里再去查权限（ACLService 用的是另一个 *gorm.DB 句柄）会直接死等。
+// 所以查同名文件、校验覆盖权限这些读操作都得在事务外面做完。
+type ConflictPlan struct {
+	Mode ConflictMode
+	// Target 是要被覆盖的那个节点，只有 Mode 为 ConflictReplace 时才有值。
+	Target *model.Node
+}
+
+// PlanConflict 事务外解析一次重名：查同名节点、验覆盖权限，定下最终做法。
+//
+// 以下情况退回"保留两者"：没撞名、同名的是目录（文件不能盖掉文件夹）。
+// 选了覆盖但对老文件没有编辑权限时不做静默降级，直接把 403 抛出去——
+// 悄悄改名存一份，用户会以为自己已经把文件更新了。
+func (s *FileService) PlanConflict(subj *Subject, space *model.Space, parentID uint64, name string, mode ConflictMode) (*ConflictPlan, error) {
+	if mode != ConflictReplace && mode != ConflictSkip {
+		return &ConflictPlan{Mode: ConflictRename}, nil
+	}
+	name = sanitizeName(name)
+	if name == "" {
+		return nil, response.BadRequest("文件名不能为空")
+	}
+	var target model.Node
+	err := s.db.Where("space_id = ? AND parent_id = ? AND name = ? AND trashed = ?",
+		space.ID, parentID, name, false).First(&target).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return &ConflictPlan{Mode: ConflictRename}, nil
+	case err != nil:
+		return nil, fmt.Errorf("查找同名文件失败: %w", err)
+	}
+	if mode == ConflictSkip {
+		// 前端会自己把要跳过的文件挑出来不传，走到这里说明是别的客户端，
+		// 那就如实告诉它"撞名了，按你的要求没传"。
+		return nil, response.Conflict("同名文件已存在，按“跳过”处理")
+	}
+	if target.IsDir {
+		return &ConflictPlan{Mode: ConflictRename}, nil
+	}
+	if _, err := s.acl.Require(subj, space, &target, model.PermEdit); err != nil {
+		return nil, err
+	}
+	return &ConflictPlan{Mode: ConflictReplace, Target: &target}, nil
+}
+
 // CreateFile 在目录下登记一个文件节点（内容已经落盘，这里只写元数据）。
 //
-// 同名文件会自动加序号而不是报错——批量上传时弹一堆"已存在"最让人恼火。
-func (s *FileService) CreateFile(tx *gorm.DB, subj *Subject, space *model.Space, parent *model.Node, name, blobHash string, size int64) (*model.Node, error) {
+// plan 是 PlanConflict 的结果，传 nil 等于"保留两者"：同名文件自动加序号
+// 而不是报错——批量上传时弹一堆"已存在"最让人恼火。
+func (s *FileService) CreateFile(tx *gorm.DB, subj *Subject, space *model.Space, parent *model.Node, name, blobHash string, size int64, plan *ConflictPlan) (*model.Node, error) {
 	name = sanitizeName(name)
 	if name == "" {
 		return nil, response.BadRequest("文件名不能为空")
@@ -357,6 +431,17 @@ func (s *FileService) CreateFile(tx *gorm.DB, subj *Subject, space *model.Space,
 		parentID = parent.ID
 		parentPath = parent.Path
 		depth = parent.Depth + 1
+	}
+
+	if plan != nil && plan.Mode == ConflictReplace && plan.Target != nil {
+		node, err := s.replaceExisting(tx, plan.Target, parentID, name, blobHash, size, subj.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		// 目标在这期间被人删了或改了名，就当没撞过名，退回加序号。
+		if node != nil {
+			return node, nil
+		}
 	}
 
 	finalName, err := s.uniqueName(tx, space.ID, parentID, name)
@@ -392,6 +477,66 @@ func (s *FileService) CreateFile(tx *gorm.DB, subj *Subject, space *model.Space,
 		return nil, err
 	}
 	return node, nil
+}
+
+// replaceExisting 把新内容写进 PlanConflict 选中的那个节点，返回被更新的节点。
+//
+// 事务里重新读一遍再改：从 PlanConflict 到这里隔着一次文件落盘，
+// 中间目标可能被别人删了、改了名或者移走了。对不上号就返回 (nil, nil)，
+// 让调用方退回"保留两者"，绝不把内容写到一个已经不是它的节点上。
+func (s *FileService) replaceExisting(tx *gorm.DB, target *model.Node, parentID uint64, name, blobHash string, size int64, userID uint64) (*model.Node, error) {
+	var fresh model.Node
+	err := tx.First(&fresh, target.ID).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("查找同名文件失败: %w", err)
+	}
+	if fresh.IsDir || fresh.Trashed || fresh.ParentID != parentID || fresh.Name != name {
+		return nil, nil
+	}
+	if err := s.applyContent(tx, &fresh, blobHash, size, userID); err != nil {
+		return nil, err
+	}
+	return &fresh, nil
+}
+
+// applyContent 把新内容挂到已有节点上：换 blob、版本加一、空间用量按差值调整。
+// 内容没变就只是空跑一趟，不必白白加一个版本号。
+func (s *FileService) applyContent(tx *gorm.DB, node *model.Node, blobHash string, size int64, userID uint64) error {
+	if node.IsDir {
+		return response.BadRequest("目录不能保存内容")
+	}
+	if node.BlobHash == blobHash {
+		return nil
+	}
+	oldHash := node.BlobHash
+	oldSize := node.Size
+	err := tx.Model(&model.Node{}).Where("id = ?", node.ID).Updates(map[string]any{
+		"blob_hash":  blobHash,
+		"size":       size,
+		"version":    gorm.Expr("version + 1"),
+		"updated_by": userID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("更新文件内容失败: %w", err)
+	}
+	if err := s.retainBlob(tx, blobHash, size); err != nil {
+		return err
+	}
+	if err := s.releaseBlob(tx, oldHash); err != nil {
+		return err
+	}
+	if err := s.space.AddUsage(tx, node.SpaceID, size-oldSize); err != nil {
+		return err
+	}
+	// 让调用方手里的副本跟库里一致，省得拿着旧大小去算用量。
+	node.BlobHash = blobHash
+	node.Size = size
+	node.Version++
+	node.UpdatedBy = userID
+	return nil
 }
 
 // retainBlob 给内容加一次引用；内容尚未登记时顺便建档。
@@ -1097,30 +1242,7 @@ func (s *FileService) UpdateContent(userID uint64, nodeID uint64, blobHash strin
 		if err := tx.First(&node, nodeID).Error; err != nil {
 			return fmt.Errorf("加载文件失败: %w", err)
 		}
-		if node.IsDir {
-			return response.BadRequest("目录不能保存内容")
-		}
-		if node.BlobHash == blobHash {
-			return nil
-		}
-		oldHash := node.BlobHash
-		oldSize := node.Size
-		err := tx.Model(&model.Node{}).Where("id = ?", nodeID).Updates(map[string]any{
-			"blob_hash":  blobHash,
-			"size":       size,
-			"version":    gorm.Expr("version + 1"),
-			"updated_by": userID,
-		}).Error
-		if err != nil {
-			return fmt.Errorf("更新文件内容失败: %w", err)
-		}
-		if err := s.retainBlob(tx, blobHash, size); err != nil {
-			return err
-		}
-		if err := s.releaseBlob(tx, oldHash); err != nil {
-			return err
-		}
-		return s.space.AddUsage(tx, node.SpaceID, size-oldSize)
+		return s.applyContent(tx, &node, blobHash, size, userID)
 	})
 }
 

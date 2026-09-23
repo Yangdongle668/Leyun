@@ -38,7 +38,8 @@ func (h *Handler) UploadFile(c *gin.Context) {
 	if v := c.PostForm("filename"); v != "" {
 		name = v
 	}
-	node, err := h.svc.Upload.SimpleUpload(subj, spaceID, parentID, name, fh.Size, f)
+	mode := service.ParseConflictMode(c.PostForm("conflict"))
+	node, err := h.svc.Upload.SimpleUpload(subj, spaceID, parentID, name, fh.Size, f, mode)
 	if err != nil {
 		h.audit(c, service.ActionFileUpload, "node", 0, name, err.Error(), false)
 		response.Fail(c, err)

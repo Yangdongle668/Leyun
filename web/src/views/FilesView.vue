@@ -3,12 +3,18 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, authedURL } from '@/api'
-import type { Crumb, FileNode, ListResult, PermCode } from '@/api/types'
+import type { ConflictMode, Crumb, FileNode, ListResult, PermCode } from '@/api/types'
 import { useUserStore } from '@/stores/user'
 import { humanSize, relativeTime, spaceTypeLabel } from '@/utils/format'
-import { filesFromDataTransfer, runUpload, type UploadTask } from '@/utils/upload'
+import {
+  FILE_CONCURRENCY,
+  filesFromDataTransfer,
+  runUpload,
+  type UploadTask,
+} from '@/utils/upload'
 import FileIcon from '@/components/FileIcon.vue'
 import UploadPanel from '@/components/UploadPanel.vue'
+import UploadConflictDialog, { type UploadConflict } from '@/components/UploadConflictDialog.vue'
 import PermissionDialog from '@/components/PermissionDialog.vue'
 import ShareDialog from '@/components/ShareDialog.vue'
 import MoveDialog from '@/components/MoveDialog.vue'
@@ -30,6 +36,10 @@ const fileInput = ref<HTMLInputElement>()
 const folderInput = ref<HTMLInputElement>()
 
 const tasks = ref<UploadTask[]>([])
+const conflictDialog = ref(false)
+const conflicts = ref<UploadConflict[]>([])
+// 弹窗是异步的：enqueue 在这里挂起，等用户点完按钮再继续。
+let conflictResolver: ((v: { mode: ConflictMode; cancel: boolean }) => void) | null = null
 const permDialog = ref(false)
 const permTarget = ref<{ nodeId: number; title: string }>({ nodeId: 0, title: '' })
 const shareDialog = ref(false)
@@ -309,7 +319,8 @@ async function enqueue(entries: Array<{ file: File; path: string }>) {
       const node = await api.mkdir(spaceId.value, parent, name)
       id = node.id
     } catch {
-      // 目录已存在时再列一次拿到它的 ID。
+      // 目录已存在时再列一次拿到它的 ID——上传整个文件夹时等于自动合并，
+      // 跟 Windows 把同名文件夹拖到一起的行为一致。
       const listed = await api.listFiles({ space_id: spaceId.value, parent_id: parent })
       const hit = listed.items.find((n) => n.is_dir && n.name === name)
       if (!hit) throw new Error(`无法创建目录 ${name}`)
@@ -319,6 +330,8 @@ async function enqueue(entries: Array<{ file: File; path: string }>) {
     return id
   }
 
+  // 先把每个文件的落点算出来，之后才好按落点查重名。
+  const planned: Array<{ file: File; parent: number }> = []
   for (const entry of entries) {
     const idx = entry.path.lastIndexOf('/')
     const dirPath = idx < 0 ? '' : entry.path.slice(0, idx)
@@ -331,19 +344,117 @@ async function enqueue(entries: Array<{ file: File; path: string }>) {
         continue
       }
     }
+    planned.push({ file: entry.file, parent: targetParent })
+  }
+  if (!planned.length) return
+
+  const decision = await resolveConflicts(planned)
+  if (decision.cancel) return
+
+  for (const item of planned) {
+    if (decision.mode === 'skip' && decision.names.has(`${item.parent}/${item.file.name}`)) continue
     const task: UploadTask = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      file: entry.file,
-      name: entry.file.name,
-      size: entry.file.size,
+      file: item.file,
+      name: item.file.name,
+      size: item.file.size,
       spaceId: spaceId.value,
-      parentId: targetParent,
+      parentId: item.parent,
       progress: 0,
-      status: 'hashing',
+      status: 'queued',
+      conflict: decision.mode === 'skip' ? 'rename' : decision.mode,
     }
     tasks.value.push(task)
-    void startTask(task)
+    queue.push(task)
   }
+  tasks.value = [...tasks.value]
+  pump()
+}
+
+/**
+ * 查一遍目标位置有没有同名文件；有就弹窗问用户怎么办。
+ *
+ * 返回的 names 是冲突文件的 `父目录/文件名`，选"跳过"时据此过滤。
+ */
+async function resolveConflicts(
+  planned: Array<{ file: File; parent: number }>,
+): Promise<{ mode: ConflictMode; cancel: boolean; names: Set<string> }> {
+  const none = { mode: 'rename' as ConflictMode, cancel: false, names: new Set<string>() }
+
+  // 按落点分组，每个目录只列一次。
+  const byParent = new Map<number, File[]>()
+  for (const item of planned) {
+    const list = byParent.get(item.parent)
+    if (list) list.push(item.file)
+    else byParent.set(item.parent, [item.file])
+  }
+
+  const found: UploadConflict[] = []
+  const names = new Set<string>()
+  for (const [parent, files] of byParent) {
+    let existing: FileNode[]
+    try {
+      // 列目录失败不该挡住上传——大不了退回原来的自动改名。
+      existing = (await api.listFiles({ space_id: spaceId.value, parent_id: parent })).items
+    } catch {
+      continue
+    }
+    const index = new Map(existing.map((n) => [n.name, n]))
+    for (const file of files) {
+      const hit = index.get(file.name)
+      if (!hit) continue
+      names.add(`${parent}/${file.name}`)
+      found.push({
+        name: file.name,
+        newSize: file.size,
+        oldSize: hit.size,
+        oldTime: hit.updated_at,
+        oldIsDir: hit.is_dir,
+        canReplace: hit.perms.includes('edit'),
+      })
+    }
+  }
+  if (!found.length) return none
+
+  conflicts.value = found
+  conflictDialog.value = true
+  const choice = await new Promise<{ mode: ConflictMode; cancel: boolean }>((resolve) => {
+    conflictResolver = resolve
+  })
+  return { ...choice, names }
+}
+
+/** 弹窗回调。用 once 语义：点确定和点关闭都会走到这，只认第一次。 */
+function onConflictResolved(choice: { mode: ConflictMode; cancel: boolean }) {
+  const resolve = conflictResolver
+  conflictResolver = null
+  resolve?.(choice)
+}
+
+/** 等着排队上传的任务。 */
+const queue: UploadTask[] = []
+let running = 0
+
+/**
+ * 从队列里取任务跑，最多同时跑 FILE_CONCURRENCY 个。
+ *
+ * 以前是每收到一个文件就立刻 startTask，62 个文件就是 62 路并发；
+ * 浏览器只肯开 6 条连接，剩下的全在排队，而 axios 的超时从创建请求就开始走，
+ * 于是排在后面的还没轮到自己就判了超时，界面上一片"网络连接失败"。
+ */
+function pump() {
+  while (running < FILE_CONCURRENCY) {
+    const task = queue.shift()
+    if (!task) break
+    // 排队期间被取消的直接丢掉。
+    if (task.status !== 'queued') continue
+    running += 1
+    void startTask(task).finally(() => {
+      running -= 1
+      pump()
+    })
+  }
+  if (!running && !queue.length) void finishBatch()
 }
 
 async function startTask(task: UploadTask) {
@@ -355,12 +466,13 @@ async function startTask(task: UploadTask) {
     task.status = 'error'
     task.message = err instanceof Error ? err.message : '上传失败'
     tasks.value = [...tasks.value]
-    return
   }
-  // 全部结束后统一刷新一次，避免每个文件都触发一轮请求。
-  if (!tasks.value.some((t) => t.status === 'uploading' || t.status === 'hashing')) {
-    await Promise.all([load(), store.refreshSpaces()])
-  }
+}
+
+/** 整批传完后统一刷新一次，避免每个文件都触发一轮请求。 */
+async function finishBatch() {
+  if (tasks.value.some((t) => t.status === 'uploading' || t.status === 'hashing')) return
+  await Promise.all([load(), store.refreshSpaces()])
 }
 
 function cancelTask(task: UploadTask) {
@@ -370,7 +482,9 @@ function cancelTask(task: UploadTask) {
 }
 
 function clearTasks() {
-  tasks.value = tasks.value.filter((t) => t.status === 'uploading' || t.status === 'hashing')
+  tasks.value = tasks.value.filter(
+    (t) => t.status === 'uploading' || t.status === 'hashing' || t.status === 'queued',
+  )
 }
 </script>
 
@@ -581,6 +695,12 @@ function clearTasks() {
       <el-icon :size="44"><UploadFilled /></el-icon>
       <p>松开即可上传到当前目录</p>
     </div>
+
+    <UploadConflictDialog
+      v-model="conflictDialog"
+      :conflicts="conflicts"
+      @resolve="onConflictResolved"
+    />
 
     <UploadPanel :tasks="tasks" @cancel="cancelTask" @clear="clearTasks" />
 
