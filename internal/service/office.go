@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -223,7 +224,7 @@ func (s *OfficeService) BuildConfig(subj *Subject, spaceID, nodeID uint64, callb
 	}
 
 	return &EditorConfig{
-		ServerURL: s.cfg.Office.PublicURL,
+		ServerURL: s.editorServerURL(callbackBase),
 		Config:    cfg,
 		Mode:      modeOf(canEdit),
 		FileName:  node.Name,
@@ -253,6 +254,38 @@ func (s *OfficeService) signPayload(payload map[string]any) (string, error) {
 		return "", fmt.Errorf("签名编辑器配置失败: %w", err)
 	}
 	return signed, nil
+}
+
+// OfficeProxyPath 是乐云自己转发 Document Server 的挂载点。
+//
+// 浏览器从这里加载编辑器，等于和页面同源，不会出现混合内容。
+const OfficeProxyPath = "/onlyoffice"
+
+// editorServerURL 决定浏览器从哪里加载编辑器。
+//
+// 优先用同源路径。页面是 http 还是 https，它都跟着走，永远不会错配。
+//
+// 配了绝对地址的（老部署留下的 http://IP:8081）要分情况：页面本身走 https
+// 时，浏览器会按混合内容规则把它直接拦掉，在线编辑必然打不开。与其把一个
+// 注定被拦的地址发下去让用户对着控制台报错发懵，不如退回同源转发——
+// 反正 Document Server 就在内网，转发这条路一定通。
+func (s *OfficeService) editorServerURL(requestBase string) string {
+	configured := strings.TrimSpace(s.cfg.Office.PublicURL)
+
+	// 本来就是同源路径，直接用。
+	if strings.HasPrefix(configured, "/") {
+		return strings.TrimRight(configured, "/")
+	}
+	if configured == "" {
+		return OfficeProxyPath
+	}
+	// 页面走 https 而编辑器地址是 http —— 这个组合线上必坏。
+	if strings.HasPrefix(requestBase, "https://") && strings.HasPrefix(configured, "http://") {
+		slog.Warn("编辑器地址是 http，但页面走的是 https，浏览器会拦截；已改用同源转发",
+			"配置值", configured, "改用", OfficeProxyPath)
+		return OfficeProxyPath
+	}
+	return strings.TrimRight(configured, "/")
 }
 
 func (s *OfficeService) callbackBase(requestBase string) string {

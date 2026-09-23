@@ -36,7 +36,7 @@ services:
       LEYUN_ADMIN_PASSWORD: ${LEYUN_ADMIN_PASSWORD:-admin}
       LEYUN_OFFICE_ENABLED: ${LEYUN_OFFICE_ENABLED:-true}
       # 浏览器访问文档服务器的地址，必须是用户电脑能打开的地址。
-      LEYUN_OFFICE_PUBLIC_URL: ${LEYUN_OFFICE_PUBLIC_URL:-http://localhost:8081}
+      LEYUN_OFFICE_PUBLIC_URL: ${LEYUN_OFFICE_PUBLIC_URL:-/onlyoffice}
       # 后端回连文档服务器走容器网络，用服务名即可。
       LEYUN_OFFICE_INTERNAL_URL: http://onlyoffice
       # 文档服务器回调乐云同样走容器网络。

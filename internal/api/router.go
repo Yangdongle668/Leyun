@@ -42,6 +42,16 @@ func NewRouter(cfg *config.Config, svc *service.Registry) *gin.Engine {
 	v1.GET("/office/content", h.OfficeContent)
 	v1.POST("/office/callback", h.OfficeCallback)
 
+	// Document Server 的静态资源与 websocket 由乐云自己转发一道。
+	// 浏览器因此只跟乐云同一个源打交道，绑了域名走 https 也不会被
+	// 混合内容拦掉。挂在 v1 之外：这些路径是 Document Server 自己的，
+	// 不属于乐云的 API。
+	if cfg.Office.Enabled {
+		proxy := h.OfficeProxy()
+		r.Any(service.OfficeProxyPath, proxy)
+		r.Any(service.OfficeProxyPath+"/*any", proxy)
+	}
+
 	// ---- 开放接口：给外部 AI Agent / 索引程序用 ----
 	//
 	// 只认 API 密钥，不接受用户登录态：这套接口的能力由密钥的 scope 显式限定，

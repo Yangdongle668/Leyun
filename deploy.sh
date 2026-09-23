@@ -215,7 +215,10 @@ LEYUN_ADMIN_USERNAME=${ADMIN_USERNAME}
 LEYUN_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
 LEYUN_OFFICE_ENABLED=${OFFICE_ENABLED}
-LEYUN_OFFICE_PUBLIC_URL=http://${PUBLIC_HOST}:${ONLYOFFICE_PORT}
+# 编辑器由乐云自己转发（/onlyoffice），和页面同源。
+# 这样绑了域名走 https 也不会被浏览器按混合内容拦掉——
+# 填成 http://IP:8081 的话，一上 https 在线编辑必然打不开。
+LEYUN_OFFICE_PUBLIC_URL=/onlyoffice
 LEYUN_OFFICE_JWT_SECRET=${OFFICE_SECRET}
 # PDF 在线编辑需要 Document Server 8.1+；对接老版本时改成 false
 LEYUN_OFFICE_PDF_EDIT=true

@@ -332,15 +332,39 @@ PDF 带「PDF」标记，点开走内置阅读器。
 `doc` `xls` `ppt` 等旧二进制格式只提供只读预览——转存会丢格式，不如不做。
 `djvu` `xps` 同理，ONLYOFFICE 没有对应的写回能力。
 
+### 编辑器由乐云自己转发（绑域名的关键）
+
+浏览器加载编辑器的地址默认是 `/onlyoffice`——**一个同源路径**，由乐云转发到
+Document Server。这一点在绑了域名之后是必须的：
+
+页面走 `https://你的域名/...`，而编辑器脚本如果来自 `http://IP:8081`，
+浏览器会按混合内容规则直接拦掉，控制台里是这句：
+
+```
+Mixed Content: The page at 'https://你的域名/office/4/5' was loaded over HTTPS,
+but requested an insecure script 'http://1.2.3.4:8081/web-apps/.../api.js'.
+This request has been blocked.
+```
+
+在线编辑于是完全打不开，而且这是必然的，不是偶发。走同源路径就不会有这个问题：
+页面是 http 它就是 http，是 https 它就是 https，永远不会错配，证书也只要一张，
+8081 更不必暴露到公网。
+
+老部署的 `.env` 里如果还写着 `http://IP:8081`，不改也能用：页面走 https 时
+乐云会发现这个组合注定被拦，自动改用同源转发，并在日志里说明。想彻底干净的话，
+把那一行改成 `LEYUN_OFFICE_PUBLIC_URL=/onlyoffice` 再 `./update.sh --no-pull`。
+
 ### 已有 ONLYOFFICE 想复用
 
 编辑 `.env`：
 
 ```bash
 LEYUN_OFFICE_ENABLED=true
-LEYUN_OFFICE_PUBLIC_URL=http://文档服务器地址:端口    # 浏览器访问的地址
-LEYUN_OFFICE_INTERNAL_URL=http://文档服务器地址:端口  # 后端回连的地址
+LEYUN_OFFICE_INTERNAL_URL=http://文档服务器地址:端口  # 后端与转发都走这个地址
 LEYUN_OFFICE_JWT_SECRET=与文档服务器一致的密钥
+# 浏览器侧保持默认的同源转发即可；只有当文档服务已经有自己的 https 域名时，
+# 才需要把它改成那个绝对地址。
+LEYUN_OFFICE_PUBLIC_URL=/onlyoffice
 ```
 
 然后 `./update.sh --no-pull`。

@@ -102,6 +102,30 @@ IP 地址、`localhost`、`.local` / `.internal` / `.lan` 这类内网域名，
 首次启用需要重启服务。重启后如果还不行，看日志里有没有
 "HTTPS 监听失败"——多半是 443 被占用，或者进程没有绑定 1024 以下端口的权限。
 
+**上了 https 之后在线编辑打不开**
+浏览器控制台里通常是这句：
+
+```
+Mixed Content: The page at 'https://你的域名/office/4/5' was loaded over HTTPS,
+but requested an insecure script 'http://1.2.3.4:8081/web-apps/.../api.js'.
+This request has been blocked.
+```
+
+页面走 https，而编辑器脚本来自 http，浏览器按混合内容规则直接拦掉了。
+
+新版不会出现这个问题：编辑器默认从 `/onlyoffice` 加载，是一个同源路径，
+由乐云转发到 Document Server——页面是什么协议它就是什么协议，永远不会错配。
+老部署的 `.env` 里即使还写着 `http://IP:8081`，页面走 https 时乐云也会发现
+这个组合注定被拦，自动改用同源转发，并在日志里写明原因。
+
+想彻底干净的话，把 `.env` 里那一行改成：
+
+```bash
+LEYUN_OFFICE_PUBLIC_URL=/onlyoffice
+```
+
+再 `./update.sh --no-pull`。改完之后 8081 也不必再暴露到公网了。
+
 **Docker 部署**
 `./deploy.sh` 默认就会映射 80 和 443，不用改任何东西。
 
