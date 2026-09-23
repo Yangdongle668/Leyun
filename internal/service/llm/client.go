@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +28,8 @@ type Config struct {
 	ChatModel  string
 	EmbedModel string
 	Timeout    time.Duration
+	// EmbedBatch 是一次向量请求最多送几条文本。填 0 表示交给 EmbedAll 自己摸。
+	EmbedBatch int
 }
 
 // Client 调用大模型服务。
@@ -128,6 +132,99 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		if v == nil {
 			return nil, fmt.Errorf("第 %d 条文本没有对应的向量", i)
 		}
+	}
+	return out, nil
+}
+
+// DefaultEmbedBatch 是没有配置时的起步批量。
+//
+// 各家对"一次能送几条"的限制差得很远：OpenAI 一次能收两千多条，
+// 通义千问有的向量模型只给 10 条，Ollama 某些版本一次只认一条。
+// 文档常常不写，写了也未必和线上一致。取 10 是因为它踩中了目前见过的
+// 最严格的那一档，先保证能跑通；真上限更高的服务可以在后台调大。
+const DefaultEmbedBatch = 10
+
+// 服务商说"你送太多了"时的措辞各不相同，这里按见过的关键词认。
+// 认不出来就当普通错误抛出去——宁可报错，也不要在一个真正的故障上
+// 反复缩小批量空转。
+var batchTooLargeHints = []string{
+	"batch size",
+	"batch_size",
+	"too many inputs",
+	"too many items",
+	"maximum number of inputs",
+	"input.contents", // 通义千问指的就是这个字段
+}
+
+// 报错里常常直接写了上限（"should not be larger than 10"），
+// 读出来就能一步退到位，不用对半砍好几轮。
+var batchLimitRe = regexp.MustCompile(
+	`(?:larger than|greater than|more than|at most|maximum of|up to|exceeds?)\s*(\d{1,5})`)
+
+func isBatchTooLarge(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, h := range batchTooLargeHints {
+		if strings.Contains(msg, h) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseBatchLimit(err error) int {
+	if err == nil {
+		return 0
+	}
+	m := batchLimitRe.FindStringSubmatch(strings.ToLower(err.Error()))
+	if m == nil {
+		return 0
+	}
+	n, convErr := strconv.Atoi(m[1])
+	if convErr != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// EmbedAll 把任意条数的文本转成向量，内部自行分批；返回顺序与入参一致。
+//
+// 调用方不需要知道服务商一次能收几条。撞上"批量太大"时，
+// 能从报错里读出上限就直接退到那个值，读不出来就对半砍，
+// 然后用新的批量重试这一批；退让后的值记在本次调用里，
+// 后面的批次直接用，不会每批都去撞一次墙。
+//
+// 只对"批量太大"退让。其他错误立刻抛出——在真故障上缩小批量重试
+// 只会把一次失败放大成几十次。
+func (c *Client) EmbedAll(ctx context.Context, texts []string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	batch := c.cfg.EmbedBatch
+	if batch <= 0 {
+		batch = DefaultEmbedBatch
+	}
+
+	out := make([][]float32, 0, len(texts))
+	for start := 0; start < len(texts); {
+		end := min(start+batch, len(texts))
+		vecs, err := c.Embed(ctx, texts[start:end])
+		if err != nil {
+			// 已经一条一条送了还嫌多，那就不是批量的问题。
+			if !isBatchTooLarge(err) || end-start <= 1 {
+				return nil, err
+			}
+			next := parseBatchLimit(err)
+			if next <= 0 || next >= end-start {
+				next = (end - start) / 2
+			}
+			batch = max(1, next)
+			continue // start 不动，用新的批量重来
+		}
+		out = append(out, vecs...)
+		start = end
 	}
 	return out, nil
 }

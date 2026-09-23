@@ -27,6 +27,7 @@ const form = reactive<AIConfig>({
   chat_model: '',
   embed_model: '',
   embed_dim: 0,
+  embed_batch: 0,
   chunk_size: 700,
   chunk_overlap: 80,
   top_k: 6,
@@ -126,6 +127,7 @@ async function save() {
       chat_model: form.chat_model,
       embed_model: form.embed_model,
       embed_dim: form.embed_dim,
+      embed_batch: form.embed_batch,
       chunk_size: form.chunk_size,
       chunk_overlap: form.chunk_overlap,
       top_k: form.top_k,
@@ -308,6 +310,14 @@ function statusType(s: string) {
           <el-input-number v-model="form.embed_dim" :min="0" :max="8192" :step="256" />
           <span class="ly-hint" style="margin-left: 10px">
             点「测试连接」可自动探测。改动后必须重建索引。
+          </span>
+        </el-form-item>
+
+        <el-form-item label="单次条数">
+          <el-input-number v-model="form.embed_batch" :min="0" :max="2048" :step="1" />
+          <span class="ly-hint" style="margin-left: 10px">
+            一次向量请求送几段文本。留 0 表示自动：撞上服务商的上限会自己退让。
+            知道自家上限的可以直接填（通义千问部分模型只收 10 条，OpenAI 可以上千）。
           </span>
         </el-form-item>
 

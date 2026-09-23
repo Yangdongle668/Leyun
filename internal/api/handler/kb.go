@@ -144,6 +144,7 @@ type AIConfigView struct {
 	ChatModel       string   `json:"chat_model"`
 	EmbedModel      string   `json:"embed_model"`
 	EmbedDim        int      `json:"embed_dim"`
+	EmbedBatch      int      `json:"embed_batch"`
 	ChunkSize       int      `json:"chunk_size"`
 	ChunkOverlap    int      `json:"chunk_overlap"`
 	TopK            int      `json:"top_k"`
@@ -158,7 +159,8 @@ func (h *Handler) aiConfigView() AIConfigView {
 		Enabled: cfg.Enabled, BaseURL: cfg.BaseURL,
 		APIKeyMask: service.MaskSecret(cfg.APIKey), APIKeySet: cfg.APIKey != "",
 		ChatModel: cfg.ChatModel, EmbedModel: cfg.EmbedModel, EmbedDim: cfg.EmbedDim,
-		ChunkSize: cfg.ChunkSize, ChunkOverlap: cfg.ChunkOverlap, TopK: cfg.TopK,
+		EmbedBatch: cfg.EmbedBatch,
+		ChunkSize:  cfg.ChunkSize, ChunkOverlap: cfg.ChunkOverlap, TopK: cfg.TopK,
 		SpaceIDs: cfg.SpaceIDs, IncludePersonal: cfg.IncludePersonal,
 		MaxFileSize: cfg.MaxFileSize,
 	}
@@ -188,6 +190,7 @@ type aiSettingsReq struct {
 	ChatModel       *string   `json:"chat_model"`
 	EmbedModel      *string   `json:"embed_model"`
 	EmbedDim        *int      `json:"embed_dim"`
+	EmbedBatch      *int      `json:"embed_batch"`
 	ChunkSize       *int      `json:"chunk_size"`
 	ChunkOverlap    *int      `json:"chunk_overlap"`
 	TopK            *int      `json:"top_k"`
@@ -229,6 +232,10 @@ func (h *Handler) UpdateAISettings(c *gin.Context) {
 	}
 	if req.EmbedDim != nil {
 		values[store.SettingAIEmbedDim] = strconv.Itoa(*req.EmbedDim)
+	}
+	if req.EmbedBatch != nil {
+		// 负数当成"自动"，省得存进去反而把批量算成 0 条。
+		values[store.SettingAIEmbedBatch] = strconv.Itoa(max(0, *req.EmbedBatch))
 	}
 	if req.ChunkSize != nil {
 		values[store.SettingAIChunkSize] = strconv.Itoa(*req.ChunkSize)

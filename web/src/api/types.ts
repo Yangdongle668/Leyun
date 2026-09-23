@@ -247,6 +247,7 @@ export interface AIConfig {
   chat_model: string
   embed_model: string
   embed_dim: number
+  embed_batch: number
   chunk_size: number
   chunk_overlap: number
   top_k: number

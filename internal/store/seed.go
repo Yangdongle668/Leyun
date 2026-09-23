@@ -55,6 +55,10 @@ const (
 	// SettingAIEmbedDim 向量维度。与模型不符时索引建不起来，所以显式记下来，
 	// 换模型导致维度变化时要整体重建。
 	SettingAIEmbedDim = "ai.embed_dim"
+	// SettingAIEmbedBatch 一次向量请求最多送几条文本。留空或填 0 表示自动：
+	// 从一个保守值起步，撞上服务商的上限就自动退让。知道自家上限的可以直接填，
+	// 填大了也不会出错，只是第一批会先撞一次墙再退回来。
+	SettingAIEmbedBatch = "ai.embed_batch"
 	// SettingAIChunkSize 切块大小（字符数）。
 	SettingAIChunkSize = "ai.chunk_size"
 	// SettingAIChunkOverlap 相邻块的重叠字符数，避免答案正好被切断在边界上。

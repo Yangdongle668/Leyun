@@ -275,6 +275,7 @@ export const api = {
     post<{
       embed_ok?: boolean
       embed_dim?: number
+      embed_batch?: number
       dim_mismatch?: string
       chat_ok?: boolean
       chat_reply?: string

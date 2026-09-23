@@ -29,6 +29,7 @@ type KBConfig struct {
 	ChatModel       string
 	EmbedModel      string
 	EmbedDim        int
+	EmbedBatch      int
 	ChunkSize       int
 	ChunkOverlap    int
 	TopK            int
@@ -55,9 +56,8 @@ const (
 	// 排在前面的若干条全被权限挡掉，用户就只剩两三条能看的，
 	// 明明库里还有他有权看的内容却答不上来。
 	candidateMultiplier = 8
-	// 单次向量接口最多送多少条文本。多数服务的上限在 16~64 之间，
-	// 取 16 兼容性最好。
-	embedBatch = 16
+	// 一次往库里插多少行。跟模型那边的批量无关，纯粹是别让单条 SQL 太大。
+	dbBatch = 64
 	// 连续失败多少次就不再重试这份文档。
 	maxIndexAttempts = 3
 )
@@ -103,6 +103,7 @@ func (s *KBService) Config() KBConfig {
 		ChatModel:       strings.TrimSpace(s.setting.Get(store.SettingAIChatModel, "")),
 		EmbedModel:      strings.TrimSpace(s.setting.Get(store.SettingAIEmbedModel, "")),
 		EmbedDim:        int(s.setting.GetInt64(store.SettingAIEmbedDim, 0)),
+		EmbedBatch:      int(s.setting.GetInt64(store.SettingAIEmbedBatch, 0)),
 		ChunkSize:       int(s.setting.GetInt64(store.SettingAIChunkSize, defaultChunkSize)),
 		ChunkOverlap:    int(s.setting.GetInt64(store.SettingAIChunkOverlap, defaultChunkOverlap)),
 		TopK:            int(s.setting.GetInt64(store.SettingAITopK, defaultTopK)),
@@ -129,6 +130,7 @@ func (s *KBService) Client() *llm.Client {
 	return llm.New(llm.Config{
 		BaseURL: c.BaseURL, APIKey: c.APIKey,
 		ChatModel: c.ChatModel, EmbedModel: c.EmbedModel,
+		EmbedBatch: c.EmbedBatch,
 	})
 }
 
@@ -446,19 +448,22 @@ func (s *KBService) indexOne(doc *model.KBDoc, cfg KBConfig, client *llm.Client)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	stored := 0
-	for start := 0; start < len(chunks); start += embedBatch {
-		end := min(start+embedBatch, len(chunks))
-		batch := chunks[start:end]
+	// 分批交给客户端处理：各家服务商一次能收几条差得很远，
+	// 而且撞上限时要能自动退让，这件事不该散在索引流程里。
+	texts := make([]string, len(chunks))
+	for i, c := range chunks {
+		texts[i] = c.Text
+	}
+	allVecs, err := client.EmbedAll(ctx, texts)
+	if err != nil {
+		return fail(model.KBFailed, err.Error())
+	}
 
-		texts := make([]string, len(batch))
-		for i, c := range batch {
-			texts[i] = c.Text
-		}
-		vecs, err := client.Embed(ctx, texts)
-		if err != nil {
-			return fail(model.KBFailed, err.Error())
-		}
+	stored := 0
+	for start := 0; start < len(chunks); start += dbBatch {
+		end := min(start+dbBatch, len(chunks))
+		batch := chunks[start:end]
+		vecs := allVecs[start:end]
 
 		rows := make([]model.KBChunk, 0, len(batch))
 		for i, c := range batch {

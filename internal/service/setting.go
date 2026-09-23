@@ -98,6 +98,7 @@ var editableSettings = map[string]bool{
 	store.SettingAIChatModel:       true,
 	store.SettingAIEmbedModel:      true,
 	store.SettingAIEmbedDim:        true,
+	store.SettingAIEmbedBatch:      true,
 	store.SettingAIChunkSize:       true,
 	store.SettingAIChunkOverlap:    true,
 	store.SettingAITopK:            true,
